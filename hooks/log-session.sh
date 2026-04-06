@@ -18,24 +18,11 @@ HHMM=$(date +"%H:%M")
 
 INPUT=$(cat)
 
-# Извлекаем session_id и cwd
-FIELDS=$(printf '%s' "$INPUT" | node -e "
-  process.stdin.setEncoding('utf8');
-  let d='';
-  process.stdin.on('data',c=>d+=c);
-  process.stdin.on('end',()=>{
-    try {
-      const j=JSON.parse(d);
-      process.stdout.write((j.session_id||'unknown')+'\n');
-      process.stdout.write((j.cwd||'unknown')+'\n');
-    } catch {
-      process.stdout.write('unknown\nunknown\n');
-    }
-  });
-" 2>/dev/null)
-
-SESSION_ID_RAW=$(printf '%s' "$FIELDS" | sed -n '1p')
-CWD=$(printf '%s' "$FIELDS" | sed -n '2p')
+# Парсим JSON через sed — без node для скорости
+SESSION_ID_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+CWD=$(printf '%s' "$INPUT" | sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+[ -z "$SESSION_ID_RAW" ] && SESSION_ID_RAW="unknown"
+[ -z "$CWD" ] && CWD="unknown"
 
 SESSION_ID=$(printf '%s' "$SESSION_ID_RAW" | LC_ALL=C tr -cd 'a-zA-Z0-9_-')
 [ -z "$SESSION_ID" ] && SESSION_ID="unknown"

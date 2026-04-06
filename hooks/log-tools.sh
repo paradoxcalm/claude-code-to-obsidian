@@ -1,12 +1,11 @@
 #!/bin/bash
 # PostToolUse hook: логирует каждый вызов инструмента
-# Используется для подсчёта — была ли сессия существенной
-# Формат строки: TIME | SESSION_ID | TOOL | CWD
+# ГОРЯЧИЙ ПУТЬ — запускается на КАЖДЫЙ tool call, должен быть < 50ms
+# Парсинг через sed (без node!) для максимальной скорости
 
-VAULT="__VAULT_PATH__/sessions"
+VAULT="/c/Users/ParadoxCalm/Documents/Obsidian Vault/sessions"
 
-# Guard: если скрипт запущен без подстановки пути, VAULT будет содержать литерал
-# Проверяем через наличие двойного подчёркивания в начале пути
+# Guard
 case "$VAULT" in
   __*) exit 0 ;;
 esac
@@ -17,30 +16,15 @@ LOGFILE="${VAULT}/.tool-log-${DATE}.txt"
 
 INPUT=$(cat)
 
-# Извлекаем все поля одним вызовом node (каждое на отдельной строке)
-FIELDS=$(printf '%s' "$INPUT" | node -e "
-  process.stdin.setEncoding('utf8');
-  let d='';
-  process.stdin.on('data',c=>d+=c);
-  process.stdin.on('end',()=>{
-    try {
-      const j=JSON.parse(d);
-      process.stdout.write((j.tool_name||'?')+'\n');
-      process.stdout.write((j.cwd||'?')+'\n');
-      process.stdout.write((j.session_id||'?')+'\n');
-    } catch {
-      process.stdout.write('?\n?\n?\n');
-    }
-  });
-" 2>/dev/null)
+# Парсим JSON через sed — НЕ запускаем node (экономим ~400ms на Windows)
+TOOL=$(printf '%s' "$INPUT" | sed -n 's/.*"tool_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+CWD=$(printf '%s' "$INPUT" | sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+SESSION_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 
-TOOL=$(printf '%s' "$FIELDS" | sed -n '1p')
-CWD=$(printf '%s' "$FIELDS" | sed -n '2p')
-SESSION_RAW=$(printf '%s' "$FIELDS" | sed -n '3p')
-
-# Санитизация SESSION_ID — убираем слэши и спецсимволы
+# Санитизация SESSION_ID
 SESSION=$(printf '%s' "$SESSION_RAW" | LC_ALL=C tr -cd 'a-zA-Z0-9_-')
 [ -z "$SESSION" ] && SESSION="?"
+[ -z "$TOOL" ] && TOOL="?"
 
 mkdir -p "$VAULT"
 printf '%s\n' "${TIME} | ${SESSION} | ${TOOL} | ${CWD}" >> "$LOGFILE"

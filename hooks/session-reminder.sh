@@ -18,26 +18,11 @@ TOOL_LOG="${VAULT}/.tool-log-${DATE}.txt"
 
 INPUT=$(cat)
 
-# Извлекаем session_id, stop_hook_active и cwd одним вызовом node
-FIELDS=$(printf '%s' "$INPUT" | node -e "
-  process.stdin.setEncoding('utf8');
-  let d='';
-  process.stdin.on('data',c=>d+=c);
-  process.stdin.on('end',()=>{
-    try {
-      const j=JSON.parse(d);
-      process.stdout.write((j.session_id||'')+'\n');
-      process.stdout.write(String(j.stop_hook_active||false)+'\n');
-      process.stdout.write((j.cwd||'')+'\n');
-    } catch {
-      process.stdout.write('\nfalse\n\n');
-    }
-  });
-" 2>/dev/null)
-
-SESSION_ID_RAW=$(printf '%s' "$FIELDS" | sed -n '1p')
-STOP_ACTIVE=$(printf '%s' "$FIELDS" | sed -n '2p')
-CWD=$(printf '%s' "$FIELDS" | sed -n '3p')
+# Парсим JSON через sed — без node для скорости (~400ms экономии на Windows)
+SESSION_ID_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+STOP_ACTIVE=$(printf '%s' "$INPUT" | sed -n 's/.*"stop_hook_active"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p')
+CWD=$(printf '%s' "$INPUT" | sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+[ -z "$STOP_ACTIVE" ] && STOP_ACTIVE="false"
 
 # Защита от бесконечного цикла
 if [ "$STOP_ACTIVE" = "true" ]; then
@@ -109,17 +94,17 @@ resolve_project() {
   printf '%s' "$fallback"
 }
 
-PROJECT=$(CFG="$CONFIG" CWD="$CWD" resolve_project "$CWD")
-
 # ============================================================
-# ПЕРВЫЙ ВЫЗОВ — инъекция контекста
+# ПЕРВЫЙ ВЫЗОВ vs ПОВТОРНЫЙ
 # ============================================================
 SESSION_STARTED="${VAULT}/.session-started-${SESSION_ID}"
 
 if [ ! -f "$SESSION_STARTED" ]; then
+  # ПЕРВЫЙ ВЫЗОВ — определяем проект и инжектим контекст
+  PROJECT=$(CFG="$CONFIG" CWD="$CWD" resolve_project "$CWD")
   mkdir -p "$VAULT" "$PROJECTS"
 
-  # Записываем проект в маркер (SessionEnd прочитает)
+  # Записываем проект в маркер (SessionEnd и повторные Stop прочитают)
   printf '%s' "$PROJECT" > "$SESSION_STARTED"
 
   # Читаем контекст проекта + конфиг одним node-вызовом
@@ -207,8 +192,12 @@ if [ ! -f "$SESSION_STARTED" ]; then
 fi
 
 # ============================================================
-# ПОСЛЕДУЮЩИЕ ВЫЗОВЫ — AUTOLOG логика
+# ПОВТОРНЫЕ ВЫЗОВЫ — AUTOLOG логика (без node, без resolve_project)
 # ============================================================
+
+# Читаем проект из маркера (уже определён при первом вызове)
+PROJECT=$(cat "$SESSION_STARTED" 2>/dev/null)
+[ -z "$PROJECT" ] && PROJECT="general"
 
 # Уже записан лог — молчим
 MARKER="${VAULT}/.logged-${SESSION_ID}"
@@ -222,16 +211,15 @@ if [ -f "$REMINDED" ]; then
   exit 0
 fi
 
-# Читаем конфиг одним node-вызовом (min_tool_calls + language)
-_cfg_line=$(CFG="$CONFIG" node -e "
-  try{const c=JSON.parse(require('fs').readFileSync(process.env.CFG,'utf8'));
-  console.log((c.min_tool_calls||5)+' '+(c.language||'ru'))}
-  catch{console.log('5 ru')}
-" 2>/dev/null || echo "5 ru")
-MIN_TOOL_CALLS="${_cfg_line%% *}"
-LANG_CFG="${_cfg_line##* }"
-MIN_TOOL_CALLS=${MIN_TOOL_CALLS:-5}
-LANG_CFG=${LANG_CFG:-ru}
+# Читаем конфиг через sed — без node (экономим ~400ms)
+MIN_TOOL_CALLS=5
+LANG_CFG="ru"
+if [ -f "$CONFIG" ]; then
+  _mtc=$(sed -n 's/.*"min_tool_calls"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' "$CONFIG" 2>/dev/null)
+  _lang=$(sed -n 's/.*"language"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CONFIG" 2>/dev/null)
+  [ -n "$_mtc" ] && MIN_TOOL_CALLS="$_mtc"
+  [ -n "$_lang" ] && LANG_CFG="$_lang"
+fi
 
 # Считаем tool calls текущей сессии
 TOOL_COUNT=0
