@@ -126,30 +126,25 @@ if [ ! -f "$SESSION_STARTED" ]; then
 
       const lines=[];
 
-      // Последние 2 сессии (не только 1)
+      // Где остановился — самое важное для СДВГ
+      if(c.stopped_at) lines.push('Где остановился: '+c.stopped_at);
+
+      // Последние 5 сессий — компактно, одна строка каждая
       const sessions=c.recent_sessions||[];
-      if(c.last_session){
-        lines.push('Последняя сессия: '+c.last_session.date+' — '+(c.last_session.summary||''));
-        if(c.stopped_at) lines.push('Где остановился: '+c.stopped_at);
-      }
-      if(sessions.length>1){
-        const prev=sessions[1];
-        lines.push('Предыдущая: '+prev.date+' — '+(prev.summary||prev.tools+' tools'));
+      if(sessions.length>0){
+        lines.push('Последние сессии:');
+        sessions.slice(0,5).forEach(s=>{
+          const mark=s.summary&&s.summary.includes('не записаны')?'':'';
+          lines.push('  '+s.date+' — '+(s.summary||s.tools+' tools'));
+        });
       }
 
-      // TODO: 1 next action + backlog
+      // ВСЕ незакрытые TODO (не только из последней сессии)
       const todos=(c.open_todos||[]).slice(0,5);
       if(todos.length>0){
-        lines.push('Следующее действие: '+todos[0]);
-        if(todos.length>1){
-          lines.push('Бэклог:');
-          todos.slice(1).forEach(t=>lines.push('  - [ ] '+t));
-        }
-      }
-
-      // Файлы
-      if(c.recent_files && c.recent_files.length>0){
-        lines.push('Файлы: '+c.recent_files.slice(0,5).join(', '));
+        lines.push('Задачи:');
+        lines.push('  → '+todos[0]+' (следующее действие)');
+        todos.slice(1).forEach(t=>lines.push('  → '+t));
       }
 
       // Stale detection: проверяем другие проекты
