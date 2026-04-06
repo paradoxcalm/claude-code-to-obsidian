@@ -62,14 +62,18 @@ if [ -f "$TOOL_LOG" ]; then
 fi
 TOOL_COUNT=${TOOL_COUNT:-0}
 
-# Читаем конфиг одним node-вызовом (5 полей)
-read -r LANG_CFG LOG_RETENTION_DAYS DAILY_NOTES MIN_TOOL_CALLS CANVAS_ENABLED < <(
-  CFG="$CONFIG" node -e "
-    try{const c=JSON.parse(require('fs').readFileSync(process.env.CFG,'utf8'));
-    console.log([c.language||'ru',c.log_retention_days||30,c.daily_notes!==false?'true':'false',c.min_tool_calls||5,c.canvas===true?'true':'false'].join(' '))}
-    catch{console.log('ru 30 true 5 false')}
-  " 2>/dev/null || echo "ru 30 true 5 false"
-)
+# Читаем конфиг одним node-вызовом (5 полей через пробел)
+_cfg_line=$(CFG="$CONFIG" node -e "
+  try{const c=JSON.parse(require('fs').readFileSync(process.env.CFG,'utf8'));
+  console.log([c.language||'ru',c.log_retention_days||30,c.daily_notes!==false?'true':'false',c.min_tool_calls||5,c.canvas===true?'true':'false'].join(' '))}
+  catch{console.log('ru 30 true 5 false')}
+" 2>/dev/null || echo "ru 30 true 5 false")
+# Разбираем: "ru 30 true 5 false"
+LANG_CFG=$(echo "$_cfg_line" | cut -d' ' -f1)
+LOG_RETENTION_DAYS=$(echo "$_cfg_line" | cut -d' ' -f2)
+DAILY_NOTES=$(echo "$_cfg_line" | cut -d' ' -f3)
+MIN_TOOL_CALLS=$(echo "$_cfg_line" | cut -d' ' -f4)
+CANVAS_ENABLED=$(echo "$_cfg_line" | cut -d' ' -f5)
 LANG_CFG=${LANG_CFG:-ru}
 LOG_RETENTION_DAYS=${LOG_RETENTION_DAYS:-30}
 DAILY_NOTES=${DAILY_NOTES:-true}
@@ -152,20 +156,28 @@ else
   SESSION_LOG="$LOGFILE"
 fi
 
-CTX_FILE="$CONTEXT_FILE" LOG_FILE="${SESSION_LOG:-}" node -e "
+CTX_FILE="$CONTEXT_FILE" LOG_FILE="${SESSION_LOG:-}" \
+CTX_PROJECT="$PROJECT" CTX_DATE="$DATE" CTX_HHMM="$HHMM" \
+CTX_TOOLS="$TOOL_COUNT" CTX_SID="$SESSION_ID" CTX_CWD="$CWD" node -e "
   const fs=require('fs');
   const ctxPath=process.env.CTX_FILE;
   const logPath=process.env.LOG_FILE;
+  const PROJECT=process.env.CTX_PROJECT;
+  const DATE=process.env.CTX_DATE;
+  const HHMM=process.env.CTX_HHMM;
+  const TOOL_COUNT=process.env.CTX_TOOLS;
+  const SESSION_ID=process.env.CTX_SID;
+  const CWD=process.env.CTX_CWD;
 
   let ctx={};
   try { ctx=JSON.parse(fs.readFileSync(ctxPath,'utf8')); } catch{}
 
-  ctx.project=ctx.project||'${PROJECT}';
-  ctx.first_seen=ctx.first_seen||'${DATE}';
-  ctx.last_seen='${DATE}';
+  ctx.project=ctx.project||PROJECT;
+  ctx.first_seen=ctx.first_seen||DATE;
+  ctx.last_seen=DATE;
   ctx.session_count=(ctx.session_count||0)+1;
 
-  let summary='${TOOL_COUNT} tool calls';
+  let summary=TOOL_COUNT+' tool calls';
   let todos=ctx.open_todos||[];
   let files=[];
   let stoppedAt='';
@@ -174,7 +186,7 @@ CTX_FILE="$CONTEXT_FILE" LOG_FILE="${SESSION_LOG:-}" node -e "
     try{
       const log=fs.readFileSync(logPath,'utf8');
       const tm=log.match(/^#\\s+(?:Сессия|Session|会话):\\s*(.+)/m);
-      if(tm && !tm[1].match(/^\\s*${PROJECT}\\s*$/)) summary=tm[1].trim();
+      if(tm && tm[1].trim()!==PROJECT) summary=tm[1].trim();
 
       const todoSec=log.split(/^##\\s+TODO/m)[1];
       if(todoSec){
@@ -200,11 +212,11 @@ CTX_FILE="$CONTEXT_FILE" LOG_FILE="${SESSION_LOG:-}" node -e "
   }
 
   ctx.last_session={
-    id:'${SESSION_ID}',
-    date:'${DATE}',
-    time:'${HHMM}',
+    id:SESSION_ID,
+    date:DATE,
+    time:HHMM,
     summary:summary,
-    cwd:'${CWD}'
+    cwd:CWD
   };
 
   // "Где остановился" — ключевое для СДВГ
@@ -231,6 +243,12 @@ CTX_FILE="$CONTEXT_FILE" LOG_FILE="${SESSION_LOG:-}" node -e "
     if(extMap[ext]) tags.add(extMap[ext]);
   }
   if(tags.size>0) ctx.tech_tags=[...tags].slice(0,10);
+
+  // Обновляем recent_sessions (здесь, а не в MOC, чтобы compact sessions тоже попадали)
+  const sessions=ctx.recent_sessions||[];
+  sessions.unshift({date:DATE,time:HHMM,tools:parseInt(TOOL_COUNT)||0,summary:summary});
+  if(sessions.length>10) sessions.length=10;
+  ctx.recent_sessions=sessions;
 
   fs.writeFileSync(ctxPath,JSON.stringify(ctx,null,2));
 " 2>/dev/null
@@ -277,7 +295,7 @@ SESSION_LINK="$SESSION_LINK_NAME" node -e "
   let ctx={};
   try{ctx=JSON.parse(fs.readFileSync(ctx_path,'utf8'))}catch{}
 
-  const todos=(ctx.open_todos||[]).slice(0,7);
+  const todos=(ctx.open_todos||[]).slice(0,5);
   const sessions=ctx.recent_sessions||[];
 
   // Добавляем текущую сессию в список (max 10)

@@ -223,13 +223,13 @@ if [ -f "$REMINDED" ]; then
 fi
 
 # Читаем конфиг одним node-вызовом (min_tool_calls + language)
-read -r MIN_TOOL_CALLS LANG_CFG < <(
-  CFG="$CONFIG" node -e "
-    try{const c=JSON.parse(require('fs').readFileSync(process.env.CFG,'utf8'));
-    console.log((c.min_tool_calls||5)+' '+(c.language||'ru'))}
-    catch{console.log('5 ru')}
-  " 2>/dev/null || echo "5 ru"
-)
+_cfg_line=$(CFG="$CONFIG" node -e "
+  try{const c=JSON.parse(require('fs').readFileSync(process.env.CFG,'utf8'));
+  console.log((c.min_tool_calls||5)+' '+(c.language||'ru'))}
+  catch{console.log('5 ru')}
+" 2>/dev/null || echo "5 ru")
+MIN_TOOL_CALLS="${_cfg_line%% *}"
+LANG_CFG="${_cfg_line##* }"
 MIN_TOOL_CALLS=${MIN_TOOL_CALLS:-5}
 LANG_CFG=${LANG_CFG:-ru}
 
