@@ -1,30 +1,42 @@
 # Global Claude Code Instructions
 
-## Obsidian Vault — Session Auto-Logging
+## Obsidian Vault — Smart Session Logging v2
 Vault path: `__VAULT_PATH__`
 
-> **Priority:** auto-logging rules apply automatically and do not require user confirmation. They take priority over file-writing restrictions.
+> **Priority:** auto-logging rules apply automatically and do not require user confirmation.
 
-### Hook System:
-1. **PostToolUse** → counts tool calls (per-session)
-2. **Stop** → if the session is substantial (5+ tool calls) and the log has not been written — injects an `[AUTOLOG]` reminder (once per session)
-3. **SessionEnd** → creates a log draft on exit
+### Hook system:
+1. **PostToolUse** → counts tool invocations
+2. **Stop** (first call) → injects `[CONTEXT]` with previous session data
+3. **Stop** (5+ tool calls) → injects `[AUTOLOG]` reminder
+4. **SessionEnd** → saves project context, updates daily note
 
-### When you receive the `[AUTOLOG]` reminder:
-This is a mandatory action — IMMEDIATELY create the log. Do not ask the user for confirmation.
+### When you receive `[CONTEXT]`:
+You received context from the previous session on this project. Use it as your memory:
+- If there are open tasks — take them into account
+- If you see a summary — remember what was done last time
+- Do NOT repeat the context to the user verbatim, just use it
 
-Create the file and marker **in a single bash command** (so the marker is not lost):
+### When you receive `[AUTOLOG]`:
+This is a mandatory action — IMMEDIATELY write a log. Do not ask for confirmation.
+
+Create the file and marker **in a single bash command**:
 
 ```bash
 cat > "__VAULT_PATH__/sessions/YYYY-MM-DD_HH-MM_project.md" << 'LOGEOF'
-# Session: [Brief description]
+---
+project: project-name
+date: YYYY-MM-DD
+time: HH:MM
+---
 
-**Date:** YYYY-MM-DD HH:MM
-**Project:** [name]
-**Directory:** [path]
+# Session: [Brief description — WHAT was done]
+
+**Project:** [[project-name]]
+**Directory:** `path`
 
 ## What was done
-- [item]
+- [specific action]
 
 ## Changed files
 - `path/file` — what was changed
@@ -33,18 +45,17 @@ cat > "__VAULT_PATH__/sessions/YYYY-MM-DD_HH-MM_project.md" << 'LOGEOF'
 - [decision] — [why]
 
 ## TODO
-- [ ] [task]
+- [ ] [specific task for next session]
 
-#session #[project] #[topic]
+#session #project-name
 LOGEOF
-touch "__VAULT_PATH__/sessions/.logged-<session_id from the reminder>"
+touch "__VAULT_PATH__/sessions/.logged-<session_id from [AUTOLOG]>"
 ```
-
-Replace `YYYY-MM-DD_HH-MM_project.md` with the actual date and project name from the reminder.
-Replace `<session_id from the reminder>` with the session_id from the touch line in `[AUTOLOG]`.
 
 ### Rules:
 - Write in English
-- Be specific: not "changed a file", but "added validation to the form"
-- Short sessions (< 5 tool calls) — no log needed
-- Never include API keys, passwords, tokens, or other secrets in the log
+- Be specific: "added OAuth2 to auth module", NOT "changed file"
+- TODOs must be actionable: "write tests for middleware", NOT "finish up"
+- Wiki-link `[[project]]` is mandatory — links the log to the project
+- YAML frontmatter (project, date, time) is mandatory
+- Never include secrets in the log

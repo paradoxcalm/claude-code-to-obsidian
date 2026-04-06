@@ -1,5 +1,8 @@
 {
   "min_tool_calls": 5,
   "log_retention_days": 30,
-  "language": "ru"
+  "language": "ru",
+  "project_roots": {},
+  "context_injection": true,
+  "daily_notes": true
 }
