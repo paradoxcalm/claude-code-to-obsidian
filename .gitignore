@@ -1,0 +1,10 @@
+node_modules/
+.DS_Store
+Thumbs.db
+*.log
+
+# Файлы создаваемые хуками (не должны попадать в репо)
+.tool-log-*
+.logged-*
+.reminded-*
+*.backup.*

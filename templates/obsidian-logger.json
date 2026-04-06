@@ -1,0 +1,5 @@
+{
+  "min_tool_calls": 5,
+  "log_retention_days": 30,
+  "language": "ru"
+}
