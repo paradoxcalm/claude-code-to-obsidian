@@ -44,8 +44,13 @@ time: HH:MM
 ## Key decisions
 - [decision] — [why]
 
+## Where I stopped
+[One sentence — what was interrupted, what is unfinished, why]
+
 ## TODO
-- [ ] [specific task for next session]
+- [ ] **Next action:** [most important task — what to do first in the next session]
+- [ ] [task 2]
+- [ ] [task 3]
 
 #session #project-name
 LOGEOF
@@ -56,6 +61,9 @@ touch "__VAULT_PATH__/sessions/.logged-<session_id from [AUTOLOG]>"
 - Write in English
 - Be specific: "added OAuth2 to auth module", NOT "changed file"
 - TODOs must be actionable: "write tests for middleware", NOT "finish up"
-- Wiki-link `[[project]]` is mandatory — links the log to the project
+- **First TODO = "Next action"** — the most important task for the next session
+- Max 5 TODOs (1 main + 4 backlog)
+- **"Where I stopped"** — mandatory section, one sentence
+- Wiki-link `[[project]]` is mandatory
 - YAML frontmatter (project, date, time) is mandatory
 - Never include secrets in the log

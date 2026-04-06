@@ -62,16 +62,24 @@ if [ -f "$TOOL_LOG" ]; then
 fi
 TOOL_COUNT=${TOOL_COUNT:-0}
 
-# Читаем конфиг
-LANG_CFG="ru"
-LOG_RETENTION_DAYS=30
-DAILY_NOTES="true"
-if [ -f "$CONFIG" ]; then
-  LANG_CFG=$(CFG="$CONFIG" node -e "try{const c=JSON.parse(require('fs').readFileSync(process.env.CFG,'utf8'));console.log(c.language||'ru')}catch{console.log('ru')}" 2>/dev/null)
-  LOG_RETENTION_DAYS=$(CFG="$CONFIG" node -e "try{const c=JSON.parse(require('fs').readFileSync(process.env.CFG,'utf8'));console.log(c.log_retention_days||30)}catch{console.log(30)}" 2>/dev/null)
-  DAILY_NOTES=$(CFG="$CONFIG" node -e "try{const c=JSON.parse(require('fs').readFileSync(process.env.CFG,'utf8'));console.log(c.daily_notes!==false?'true':'false')}catch{console.log('true')}" 2>/dev/null)
-  LANG_CFG=${LANG_CFG:-ru}
-  LOG_RETENTION_DAYS=${LOG_RETENTION_DAYS:-30}
+# Читаем конфиг одним node-вызовом (5 полей)
+read -r LANG_CFG LOG_RETENTION_DAYS DAILY_NOTES MIN_TOOL_CALLS CANVAS_ENABLED < <(
+  CFG="$CONFIG" node -e "
+    try{const c=JSON.parse(require('fs').readFileSync(process.env.CFG,'utf8'));
+    console.log([c.language||'ru',c.log_retention_days||30,c.daily_notes!==false?'true':'false',c.min_tool_calls||5,c.canvas===true?'true':'false'].join(' '))}
+    catch{console.log('ru 30 true 5 false')}
+  " 2>/dev/null || echo "ru 30 true 5 false"
+)
+LANG_CFG=${LANG_CFG:-ru}
+LOG_RETENTION_DAYS=${LOG_RETENTION_DAYS:-30}
+DAILY_NOTES=${DAILY_NOTES:-true}
+MIN_TOOL_CALLS=${MIN_TOOL_CALLS:-5}
+CANVAS_ENABLED=${CANVAS_ENABLED:-false}
+
+# Compact mode: короткие сессии пропускают MOC/Canvas/daily
+COMPACT_MODE="false"
+if [ "$TOOL_COUNT" -lt "$MIN_TOOL_CALLS" ] 2>/dev/null; then
+  COMPACT_MODE="true"
 fi
 
 # Если Claude уже записал подробный лог — не создаём стаб
@@ -160,6 +168,7 @@ CTX_FILE="$CONTEXT_FILE" LOG_FILE="${SESSION_LOG:-}" node -e "
   let summary='${TOOL_COUNT} tool calls';
   let todos=ctx.open_todos||[];
   let files=[];
+  let stoppedAt='';
 
   if(logPath){
     try{
@@ -180,6 +189,13 @@ CTX_FILE="$CONTEXT_FILE" LOG_FILE="${SESSION_LOG:-}" node -e "
         const m=items.match(/\`([^\`]+)\`/g);
         if(m) files=m.map(x=>x.replace(/\`/g,'')).slice(0,10);
       }
+
+      // Парсим "Где остановился" / "Where I stopped" / "停止位置"
+      const stoppedSec=log.split(/^##\\s+(?:Где остановился|Where I stopped|停止位置)/m)[1];
+      if(stoppedSec){
+        const line=stoppedSec.split(/^##/m)[0].trim().split('\\n')[0].trim();
+        if(line && !line.startsWith('_')) stoppedAt=line;
+      }
     }catch{}
   }
 
@@ -191,9 +207,12 @@ CTX_FILE="$CONTEXT_FILE" LOG_FILE="${SESSION_LOG:-}" node -e "
     cwd:'${CWD}'
   };
 
-  // Жёсткий лимит: только последние 7 TODO из текущей сессии (не накапливаем)
-  // Жёсткий лимит: только последние 7 TODO (не накапливаем)
-  if(todos.length>0) ctx.open_todos=todos.slice(0,7);
+  // "Где остановился" — ключевое для СДВГ
+  if(stoppedAt) ctx.stopped_at=stoppedAt;
+  else delete ctx.stopped_at;
+
+  // TODO: max 5 (1 next action + 4 backlog)
+  if(todos.length>0) ctx.open_todos=todos.slice(0,5);
   else delete ctx.open_todos;
   if(files.length>0) ctx.recent_files=files;
 
@@ -217,9 +236,23 @@ CTX_FILE="$CONTEXT_FILE" LOG_FILE="${SESSION_LOG:-}" node -e "
 " 2>/dev/null
 
 # ============================================================
-# 3. СТРАНИЦА ПРОЕКТА (MOC — Map of Content)
-# Живые ссылки + Dataview. Обновляется каждую сессию.
+# 3. СТРАНИЦА ПРОЕКТА (MOC) + 3b. CANVAS + 4. DAILY NOTE
+# Пропускаем в compact mode (короткие сессии < min_tool_calls)
 # ============================================================
+if [ "$COMPACT_MODE" = "true" ]; then
+  # Compact: только cleanup, пропускаем MOC/Canvas/daily
+  rm -f "${SESSION_STARTED}" "${VAULT}/.reminded-${SESSION_ID}" 2>/dev/null
+  # Ротация
+  if [ "$LOG_RETENTION_DAYS" -gt 0 ] 2>/dev/null; then
+    find "$VAULT" -maxdepth 1 -name '.tool-log-*' -type f -mtime +"$LOG_RETENTION_DAYS" -delete 2>/dev/null || true
+    find "$VAULT" -maxdepth 1 -name '.logged-*' -type f -mtime +"$LOG_RETENTION_DAYS" -delete 2>/dev/null || true
+    find "$VAULT" -maxdepth 1 -name '.reminded-*' -type f -mtime +"$LOG_RETENTION_DAYS" -delete 2>/dev/null || true
+    find "$VAULT" -maxdepth 1 -name '.session-started-*' -type f -mtime +"$LOG_RETENTION_DAYS" -delete 2>/dev/null || true
+  fi
+  exit 0
+fi
+
+# --- Ниже только для substantial сессий ---
 PROJECT_PAGE="${PROJECTS}/${PROJECT}.md"
 SESSION_LINK_NAME="${DATE}_${TIME}_${PROJECT}"
 
@@ -298,8 +331,9 @@ SESSION_LINK="$SESSION_LINK_NAME" node -e "
 " 2>/dev/null
 
 # ============================================================
-# 3b. CANVAS — визуальная карта проекта
+# 3b. CANVAS — визуальная карта проекта (опционально, default off)
 # ============================================================
+if [ "$CANVAS_ENABLED" = "true" ]; then
 CANVAS_FILE="${PROJECTS}/${PROJECT}.canvas"
 
 CTX_FILE="$CONTEXT_FILE" CANVAS_FILE="$CANVAS_FILE" PROJECT="$PROJECT" node -e "
@@ -373,6 +407,7 @@ CTX_FILE="$CONTEXT_FILE" CANVAS_FILE="$CANVAS_FILE" PROJECT="$PROJECT" node -e "
   const canvas={nodes,edges};
   fs.writeFileSync(canvasPath,JSON.stringify(canvas,null,2));
 " 2>/dev/null
+fi  # CANVAS_ENABLED
 
 # ============================================================
 # 4. DAILY NOTE (создаём/обновляем)

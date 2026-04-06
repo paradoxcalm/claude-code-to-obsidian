@@ -4,5 +4,7 @@
   "language": "ru",
   "project_roots": {},
   "context_injection": true,
-  "daily_notes": true
+  "daily_notes": true,
+  "canvas": false,
+  "stale_threshold_days": 5
 }

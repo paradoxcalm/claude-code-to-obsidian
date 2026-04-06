@@ -78,7 +78,16 @@ resolve_project() {
     fi
   fi
 
-  # 2. Идём вверх по директориям, ищем .context-{name}.json
+  # 2. Git-based detection: берём имя репо из git toplevel или remote origin
+  local git_name=""
+  git_name=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null)
+  git_name=$(printf '%s' "$git_name" | LC_ALL=C tr -cd 'a-zA-Z0-9._-' | head -c 50)
+  if [ -n "$git_name" ]; then
+    printf '%s' "$git_name"
+    return
+  fi
+
+  # 3. Идём вверх по директориям, ищем .context-{name}.json
   local dir="$cwd" depth=0
   while [ "$depth" -lt 4 ] && [ "$dir" != "/" ] && [ "$dir" != "." ]; do
     local name
@@ -113,45 +122,92 @@ if [ ! -f "$SESSION_STARTED" ]; then
   # Записываем проект в маркер (SessionEnd прочитает)
   printf '%s' "$PROJECT" > "$SESSION_STARTED"
 
-  # Читаем контекст проекта
+  # Читаем контекст проекта + конфиг одним node-вызовом
   CONTEXT_FILE="${PROJECTS}/.context-${PROJECT}.json"
 
-  # Проверяем включена ли инъекция
-  CONTEXT_ENABLED="true"
-  if [ -f "$CONFIG" ]; then
-    CONTEXT_ENABLED=$(node -e "try{const c=JSON.parse(require('fs').readFileSync(process.env.CFG,'utf8'));console.log(c.context_injection!==false?'true':'false')}catch{console.log('true')}" 2>/dev/null)
-  fi
+  CONTEXT_OUTPUT=$(CFG="$CONFIG" CTX="$CONTEXT_FILE" PROJECTS_DIR="$PROJECTS" \
+  PROJECT="$PROJECT" node -e "
+    const fs=require('fs'),path=require('path');
+    try {
+      // Конфиг
+      let cfg={};
+      try{cfg=JSON.parse(fs.readFileSync(process.env.CFG,'utf8'))}catch{}
+      if(cfg.context_injection===false) process.exit(0);
 
-  if [ "$CONTEXT_ENABLED" = "true" ] && [ -f "$CONTEXT_FILE" ]; then
-    CONTEXT_OUTPUT=$(CFG="$CONTEXT_FILE" node -e "
-      const fs=require('fs');
-      try {
-        const c=JSON.parse(fs.readFileSync(process.env.CFG,'utf8'));
-        const lines=[];
-        if(c.last_session){
-          lines.push('Последняя сессия: '+c.last_session.date+' — '+(c.last_session.summary||'нет описания'));
-        }
-        if(c.open_todos && c.open_todos.length>0){
-          lines.push('Открытые задачи:');
-          c.open_todos.slice(0,7).forEach(t=>lines.push('  - [ ] '+t));
-        }
-        if(c.recent_files && c.recent_files.length>0){
-          lines.push('Недавние файлы: '+c.recent_files.slice(0,5).join(', '));
-        }
-        if(lines.length>0) console.log(lines.join('\n'));
-      } catch{}
-    " 2>/dev/null)
+      // Контекст проекта
+      const ctxPath=process.env.CTX;
+      if(!fs.existsSync(ctxPath)) process.exit(0);
+      const c=JSON.parse(fs.readFileSync(ctxPath,'utf8'));
 
-    if [ -n "$CONTEXT_OUTPUT" ]; then
-      printf '[CONTEXT] Проект: %s\n%s\n' "$PROJECT" "$CONTEXT_OUTPUT"
-    fi
+      const lines=[];
+
+      // Последние 2 сессии (не только 1)
+      const sessions=c.recent_sessions||[];
+      if(c.last_session){
+        lines.push('Последняя сессия: '+c.last_session.date+' — '+(c.last_session.summary||''));
+        if(c.stopped_at) lines.push('Где остановился: '+c.stopped_at);
+      }
+      if(sessions.length>1){
+        const prev=sessions[1];
+        lines.push('Предыдущая: '+prev.date+' — '+(prev.summary||prev.tools+' tools'));
+      }
+
+      // TODO: 1 next action + backlog
+      const todos=(c.open_todos||[]).slice(0,5);
+      if(todos.length>0){
+        lines.push('Следующее действие: '+todos[0]);
+        if(todos.length>1){
+          lines.push('Бэклог:');
+          todos.slice(1).forEach(t=>lines.push('  - [ ] '+t));
+        }
+      }
+
+      // Файлы
+      if(c.recent_files && c.recent_files.length>0){
+        lines.push('Файлы: '+c.recent_files.slice(0,5).join(', '));
+      }
+
+      // Stale detection: проверяем другие проекты
+      const staleThreshold=cfg.stale_threshold_days||5;
+      const now=new Date();
+      const projDir=process.env.PROJECTS_DIR;
+      const currentProject=process.env.PROJECT;
+      try{
+        const files=fs.readdirSync(projDir).filter(f=>f.startsWith('.context-')&&f.endsWith('.json'));
+        const stale=[];
+        for(const f of files){
+          const name=f.replace('.context-','').replace('.json','');
+          if(name===currentProject) continue;
+          try{
+            const pc=JSON.parse(fs.readFileSync(path.join(projDir,f),'utf8'));
+            if(pc.last_seen){
+              const days=Math.floor((now-new Date(pc.last_seen))/(86400000));
+              if(days>=staleThreshold){
+                stale.push({name,days,action:pc.stopped_at||(pc.open_todos&&pc.open_todos[0])||''});
+              }
+            }
+          }catch{}
+        }
+        stale.sort((a,b)=>a.days-b.days);
+        if(stale.length>0){
+          const s=stale[0];
+          lines.push('Внимание: '+s.name+' не трогался '+s.days+' дней'+(s.action?' ('+s.action+')':''));
+        }
+      }catch{}
+
+      if(lines.length>0) console.log(lines.join('\n'));
+    } catch{}
+  " 2>/dev/null)
+
+  if [ -n "$CONTEXT_OUTPUT" ]; then
+    printf '[CONTEXT] Проект: %s\n%s\n' "$PROJECT" "$CONTEXT_OUTPUT"
   fi
 
   exit 0
 fi
 
 # ============================================================
-# ПОСЛЕДУЮЩИЕ ВЫЗОВЫ — AUTOLOG логика (из v1)
+# ПОСЛЕДУЮЩИЕ ВЫЗОВЫ — AUTOLOG логика
 # ============================================================
 
 # Уже записан лог — молчим
@@ -166,12 +222,16 @@ if [ -f "$REMINDED" ]; then
   exit 0
 fi
 
-# Читаем конфиг
-MIN_TOOL_CALLS=5
-if [ -f "$CONFIG" ]; then
-  MIN_TOOL_CALLS=$(node -e "try{const c=JSON.parse(require('fs').readFileSync(process.env.CFG,'utf8'));console.log(c.min_tool_calls||5)}catch{console.log(5)}" 2>/dev/null)
-  MIN_TOOL_CALLS=${MIN_TOOL_CALLS:-5}
-fi
+# Читаем конфиг одним node-вызовом (min_tool_calls + language)
+read -r MIN_TOOL_CALLS LANG_CFG < <(
+  CFG="$CONFIG" node -e "
+    try{const c=JSON.parse(require('fs').readFileSync(process.env.CFG,'utf8'));
+    console.log((c.min_tool_calls||5)+' '+(c.language||'ru'))}
+    catch{console.log('5 ru')}
+  " 2>/dev/null || echo "5 ru"
+)
+MIN_TOOL_CALLS=${MIN_TOOL_CALLS:-5}
+LANG_CFG=${LANG_CFG:-ru}
 
 # Считаем tool calls текущей сессии
 TOOL_COUNT=0
@@ -187,13 +247,6 @@ fi
 # Ставим маркер
 mkdir -p "$VAULT"
 touch "$REMINDED"
-
-# Читаем язык
-LANG_CFG="ru"
-if [ -f "$CONFIG" ]; then
-  LANG_CFG=$(node -e "try{const c=JSON.parse(require('fs').readFileSync(process.env.CFG,'utf8'));console.log(c.language||'ru')}catch{console.log('ru')}" 2>/dev/null)
-  LANG_CFG=${LANG_CFG:-ru}
-fi
 
 VAULT_BASE="__VAULT_PATH__"
 HHMM=$(date +"%H-%M")
