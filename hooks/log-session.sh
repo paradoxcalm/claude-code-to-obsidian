@@ -191,57 +191,188 @@ CTX_FILE="$CONTEXT_FILE" LOG_FILE="${SESSION_LOG:-}" node -e "
     cwd:'${CWD}'
   };
 
-  if(todos.length>0) ctx.open_todos=todos;
+  // Жёсткий лимит: только последние 7 TODO из текущей сессии (не накапливаем)
+  // Жёсткий лимит: только последние 7 TODO (не накапливаем)
+  if(todos.length>0) ctx.open_todos=todos.slice(0,7);
   else delete ctx.open_todos;
   if(files.length>0) ctx.recent_files=files;
+
+  // Автотеги по расширениям файлов
+  const extMap={
+    '.ts':'typescript','.tsx':'typescript','.js':'javascript','.jsx':'javascript',
+    '.py':'python','.rs':'rust','.go':'golang','.java':'java','.rb':'ruby',
+    '.sql':'database','.prisma':'database','.sh':'bash','.bash':'bash',
+    '.css':'css','.scss':'css','.html':'html','.vue':'vue','.svelte':'svelte',
+    '.json':'config','.yaml':'config','.yml':'config','.toml':'config',
+    '.md':'docs','.mdx':'docs','.dockerfile':'docker','.docker':'docker'
+  };
+  const tags=new Set(ctx.tech_tags||[]);
+  for(const f of files){
+    const ext='.'+f.split('.').pop().toLowerCase();
+    if(extMap[ext]) tags.add(extMap[ext]);
+  }
+  if(tags.size>0) ctx.tech_tags=[...tags].slice(0,10);
 
   fs.writeFileSync(ctxPath,JSON.stringify(ctx,null,2));
 " 2>/dev/null
 
 # ============================================================
-# 3. СТРАНИЦА ПРОЕКТА (создаём если нет)
+# 3. СТРАНИЦА ПРОЕКТА (MOC — Map of Content)
+# Живые ссылки + Dataview. Обновляется каждую сессию.
 # ============================================================
 PROJECT_PAGE="${PROJECTS}/${PROJECT}.md"
-if [ ! -f "$PROJECT_PAGE" ]; then
-  case "$LANG_CFG" in
-    en)
-      {
-        printf '# Project: %s\n\n' "$PROJECT"
-        printf '**Status:** In progress\n'
-        printf '**Since:** %s\n\n' "$DATE"
-        printf '## Open Tasks\n'
-        printf '```dataview\nTASK FROM "sessions"\nWHERE contains(file.name, "%s") AND !completed\n```\n\n' "$PROJECT"
-        printf '## Recent Sessions\n'
-        printf '```dataview\nTABLE date as "Date", time as "Time"\nFROM "sessions"\nWHERE project = "%s"\nSORT date DESC\nLIMIT 10\n```\n\n' "$PROJECT"
-        printf '#project #%s\n' "$PROJECT"
-      } > "$PROJECT_PAGE"
-      ;;
-    zh)
-      {
-        printf '# 项目: %s\n\n' "$PROJECT"
-        printf '**状态:** 进行中\n'
-        printf '**开始:** %s\n\n' "$DATE"
-        printf '## 待办任务\n'
-        printf '```dataview\nTASK FROM "sessions"\nWHERE contains(file.name, "%s") AND !completed\n```\n\n' "$PROJECT"
-        printf '## 最近会话\n'
-        printf '```dataview\nTABLE date as "日期", time as "时间"\nFROM "sessions"\nWHERE project = "%s"\nSORT date DESC\nLIMIT 10\n```\n\n' "$PROJECT"
-        printf '#项目 #%s\n' "$PROJECT"
-      } > "$PROJECT_PAGE"
-      ;;
-    *)
-      {
-        printf '# Проект: %s\n\n' "$PROJECT"
-        printf '**Статус:** В работе\n'
-        printf '**Начало:** %s\n\n' "$DATE"
-        printf '## Открытые задачи\n'
-        printf '```dataview\nTASK FROM "sessions"\nWHERE contains(file.name, "%s") AND !completed\n```\n\n' "$PROJECT"
-        printf '## Последние сессии\n'
-        printf '```dataview\nTABLE date as "Дата", time as "Время"\nFROM "sessions"\nWHERE project = "%s"\nSORT date DESC\nLIMIT 10\n```\n\n' "$PROJECT"
-        printf '#проект #%s\n' "$PROJECT"
-      } > "$PROJECT_PAGE"
-      ;;
-  esac
+SESSION_LINK_NAME="${DATE}_${TIME}_${PROJECT}"
+
+# Определяем имя файла сессии (стаб или Claude-лог)
+if [ "$SKIP_STUB" = "true" ] && [ -n "$SESSION_LOG" ]; then
+  SESSION_LINK_NAME=$(basename "$SESSION_LOG" .md)
 fi
+
+CTX_FILE="$CONTEXT_FILE" PROJECT_PAGE="$PROJECT_PAGE" LANG="$LANG_CFG" \
+PROJECT="$PROJECT" DATE="$DATE" HHMM="$HHMM" TOOL_COUNT="$TOOL_COUNT" \
+SESSION_LINK="$SESSION_LINK_NAME" node -e "
+  const fs=require('fs');
+  const pp=process.env.PROJECT_PAGE;
+  const ctx_path=process.env.CTX_FILE;
+  const lang=process.env.LANG||'ru';
+  const project=process.env.PROJECT;
+  const date=process.env.DATE;
+  const hhmm=process.env.HHMM;
+  const tools=process.env.TOOL_COUNT;
+  const sessionLink=process.env.SESSION_LINK;
+
+  let ctx={};
+  try{ctx=JSON.parse(fs.readFileSync(ctx_path,'utf8'))}catch{}
+
+  const todos=(ctx.open_todos||[]).slice(0,7);
+  const sessions=ctx.recent_sessions||[];
+
+  // Добавляем текущую сессию в список (max 10)
+  sessions.unshift({date,time:hhmm,link:sessionLink,tools:parseInt(tools)||0,summary:ctx.last_session?.summary||''});
+  if(sessions.length>10) sessions.length=10;
+  ctx.recent_sessions=sessions;
+
+  // Сохраняем обновлённый контекст
+  fs.writeFileSync(ctx_path,JSON.stringify(ctx,null,2));
+
+  // Генерируем MOC
+  const L={
+    ru:{title:'Проект',status:'В работе',since:'Начало',sessions_h:'Последние сессии',
+        todos_h:'Открытые задачи',date_h:'Дата',tools_h:'Инструменты',tag:'проект',no_todos:'Нет открытых задач'},
+    en:{title:'Project',status:'In progress',since:'Since',sessions_h:'Recent Sessions',
+        todos_h:'Open Tasks',date_h:'Date',tools_h:'Tools',tag:'project',no_todos:'No open tasks'},
+    zh:{title:'项目',status:'进行中',since:'开始',sessions_h:'最近会话',
+        todos_h:'待办任务',date_h:'日期',tools_h:'工具',tag:'项目',no_todos:'无待办任务'}
+  };
+  const t=L[lang]||L.ru;
+
+  let md=[];
+  md.push('# '+t.title+': '+project);
+  md.push('');
+  md.push('**'+t.status+'** | **'+t.since+':** '+(ctx.first_seen||date)+' | **Sessions:** '+(ctx.session_count||1));
+  md.push('');
+
+  // Живые ссылки на сессии
+  md.push('## '+t.sessions_h);
+  md.push('');
+  md.push('| '+t.date_h+' | '+t.tools_h+' | |');
+  md.push('|------|-------|---|');
+  for(const s of sessions){
+    const summary=s.summary?(' — '+s.summary.substring(0,60)):'';
+    md.push('| '+s.date+' '+s.time+' | '+s.tools+' | [['+s.link+']]'+summary+' |');
+  }
+  md.push('');
+
+  // TODO
+  md.push('## '+t.todos_h);
+  md.push('');
+  if(todos.length>0){
+    for(const todo of todos) md.push('- [ ] '+todo);
+  } else {
+    md.push('_'+t.no_todos+'_');
+  }
+  md.push('');
+  md.push('#'+t.tag+' #'+project);
+
+  fs.writeFileSync(pp, md.join('\n'));
+" 2>/dev/null
+
+# ============================================================
+# 3b. CANVAS — визуальная карта проекта
+# ============================================================
+CANVAS_FILE="${PROJECTS}/${PROJECT}.canvas"
+
+CTX_FILE="$CONTEXT_FILE" CANVAS_FILE="$CANVAS_FILE" PROJECT="$PROJECT" node -e "
+  const fs=require('fs');
+  const ctx_path=process.env.CTX_FILE;
+  const canvasPath=process.env.CANVAS_FILE;
+  const project=process.env.PROJECT;
+
+  let ctx={};
+  try{ctx=JSON.parse(fs.readFileSync(ctx_path,'utf8'))}catch{}
+
+  const sessions=ctx.recent_sessions||[];
+  const todos=(ctx.open_todos||[]).slice(0,5);
+
+  // Ноды
+  const nodes=[];
+  const edges=[];
+  let y=0;
+
+  // Центральная нода — проект
+  const projectId='project-'+project;
+  nodes.push({
+    id:projectId,
+    type:'text',
+    x:0, y:0, width:300, height:80,
+    text:'# '+project+'\nSessions: '+(ctx.session_count||0),
+    color:'4'
+  });
+
+  // Ноды сессий (справа)
+  for(let i=0;i<Math.min(sessions.length,7);i++){
+    const s=sessions[i];
+    const sid='session-'+i;
+    nodes.push({
+      id:sid,
+      type:'text',
+      x:400, y: i*120, width:350, height:80,
+      text:'**'+s.date+'** '+s.time+'\n'+(s.summary||s.tools+' tools'),
+      color: i===0?'3':'0'
+    });
+    edges.push({
+      id:'edge-'+i,
+      fromNode:projectId,
+      toNode:sid,
+      fromSide:'right',
+      toSide:'left'
+    });
+  }
+
+  // Ноды TODO (слева)
+  if(todos.length>0){
+    const todoId='todos';
+    let todoText='## TODO\n';
+    for(const t of todos) todoText+='- [ ] '+t+'\n';
+    nodes.push({
+      id:todoId,
+      type:'text',
+      x:-450, y:0, width:350, height:40+todos.length*30,
+      text:todoText,
+      color:'1'
+    });
+    edges.push({
+      id:'edge-todos',
+      fromNode:todoId,
+      toNode:projectId,
+      fromSide:'right',
+      toSide:'left'
+    });
+  }
+
+  const canvas={nodes,edges};
+  fs.writeFileSync(canvasPath,JSON.stringify(canvas,null,2));
+" 2>/dev/null
 
 # ============================================================
 # 4. DAILY NOTE (создаём/обновляем)
