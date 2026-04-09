@@ -3,10 +3,11 @@
 # ГОРЯЧИЙ ПУТЬ — запускается на КАЖДЫЙ tool call, должен быть < 50ms
 # Парсинг через sed (без node!) для максимальной скорости
 
-VAULT="/c/Users/ParadoxCalm/Documents/Obsidian Vault/sessions"
+VAULT_ROOT="__VAULT_PATH__"
+VAULT="${VAULT_ROOT}/sessions"
 
 # Guard
-case "$VAULT" in
+case "$VAULT_ROOT" in
   __*) exit 0 ;;
 esac
 

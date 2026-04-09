@@ -296,14 +296,7 @@ SESSION_LINK="$SESSION_LINK_NAME" node -e "
 
   const todos=(ctx.open_todos||[]).slice(0,5);
   const sessions=ctx.recent_sessions||[];
-
-  // Добавляем текущую сессию в список (max 10)
-  sessions.unshift({date,time:hhmm,link:sessionLink,tools:parseInt(tools)||0,summary:ctx.last_session?.summary||''});
-  if(sessions.length>10) sessions.length=10;
-  ctx.recent_sessions=sessions;
-
-  // Сохраняем обновлённый контекст
-  fs.writeFileSync(ctx_path,JSON.stringify(ctx,null,2));
+  // recent_sessions уже обновлён в section 2 — не дублируем unshift
 
   // Генерируем MOC
   const L={
@@ -473,10 +466,9 @@ if [ "$DAILY_NOTES" = "true" ]; then
       DAILY_LINE=$(printf -- '- %s — [[%s]] — %s tool calls' "$HHMM" "$PROJECT" "$TOOL_COUNT")
       # Ищем секцию "## Сессии" / "## Sessions" / "## 会话" и вставляем после неё
       if grep -qE "^## (Сессии|Sessions|会话)" "$DAILY_FILE" 2>/dev/null; then
-        # Кроссплатформенный sed (macOS sed -i требует '' аргумент)
+        # awk вместо sed — кроссплатформенно (macOS/Linux/Git Bash)
         DAILY_TMP="${DAILY_FILE}.tmp.$$"
-        sed "/^## \(Сессии\|Sessions\|会话\)/a\\
-${DAILY_LINE}" "$DAILY_FILE" > "$DAILY_TMP" && mv "$DAILY_TMP" "$DAILY_FILE"
+        awk -v line="$DAILY_LINE" '/^## (Сессии|Sessions|会话)/{print; print line; next}{print}' "$DAILY_FILE" > "$DAILY_TMP" && mv "$DAILY_TMP" "$DAILY_FILE"
       else
         # Секции нет — дописываем в конец
         printf '\n%s\n' "$DAILY_LINE" >> "$DAILY_FILE"

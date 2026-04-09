@@ -139,6 +139,32 @@ MyVault/
 #session #my-app #auth #oauth
 ```
 
+## Configuration
+
+After installation, `.obsidian-logger.json` is created in the vault:
+
+```json
+{
+  "min_tool_calls": 5,
+  "log_retention_days": 30,
+  "language": "en",
+  "canvas": false,
+  "daily_notes": true,
+  "stale_threshold_days": 5
+}
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `min_tool_calls` | `5` | Minimum tool calls to trigger the AUTOLOG reminder |
+| `log_retention_days` | `30` | Days before deleting technical files (`.tool-log-*`, `.logged-*`, `.reminded-*`) |
+| `language` | `ru` | Language of logs and reminders (`ru`, `en`, `zh`) |
+| `canvas` | `false` | Visual project map in Obsidian Canvas format (`.canvas`) |
+| `daily_notes` | `true` | Automatically record sessions in daily notes |
+| `stale_threshold_days` | `5` | Days without activity before a "stale project" warning |
+| `project_roots` | `{}` | Manual mapping of directory paths to project names |
+| `context_injection` | `true` | Enable/disable automatic context injection on session start |
+
 ## Uninstallation
 
 ```bash
@@ -158,7 +184,7 @@ Removes hooks from `settings.json` and the section from `CLAUDE.md`. Your vault 
 All sessions from the last week:
 ````markdown
 ```dataview
-TABLE file.cday as "Дата"
+TABLE file.cday as "Date"
 FROM "sessions"
 WHERE file.cday >= date(today) - dur(7 days)
 SORT file.cday DESC

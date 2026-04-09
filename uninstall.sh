@@ -64,7 +64,7 @@ if [ -f "$GLOBAL_CLAUDE" ]; then
     const filePath = process.env.GLOBAL_CLAUDE;
     let content = fs.readFileSync(filePath, 'utf8');
     // Удаляем секцию от '## Obsidian Vault' до следующего заголовка любого уровня или конца файла
-    content = content.replace(/\n*## Obsidian Vault[\s\S]*?(?=\n#+ |\s*$)/, '');
+    content = content.replace(/\n*## Obsidian Vault[\s\S]*?(?=\n## |\s*$)/, '');
     content = content.trim();
     if (content) {
       fs.writeFileSync(filePath, content + '\n');

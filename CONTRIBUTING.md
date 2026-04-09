@@ -13,14 +13,18 @@ Thanks for your interest in contributing to Claude Code Obsidian Logger!
 ### Project Structure
 
 ```
-hooks/              # Hook scripts (templates with __VAULT_PATH__ placeholder)
-templates/          # Obsidian note templates
-tests/              # Test suite
-docs/               # Translated READMEs
-install.sh          # Installer
-uninstall.sh        # Uninstaller
-global-claude.md    # CLAUDE.md template (appended to ~/.claude/CLAUDE.md)
-vault-claude.md     # Vault-specific CLAUDE.md template
+hooks/                      # Hook scripts (templates with __VAULT_PATH__ placeholder)
+skills/                     # SKILL.md templates (ru/en/zh)
+templates/                  # Obsidian note templates
+tests/                      # Test suite
+docs/                       # Translated READMEs
+.claude/commands/           # Claude Code slash commands (/release)
+install.sh                  # Installer
+uninstall.sh                # Uninstaller
+global-claude.{ru,en,zh}.md # CLAUDE.md templates (appended to ~/.claude/CLAUDE.md)
+vault-claude.{ru,en,zh}.md  # Vault-specific CLAUDE.md templates
+VERSION                     # Semver — single source of truth
+CHANGELOG.md                # Keep a Changelog format
 ```
 
 ### Running Tests

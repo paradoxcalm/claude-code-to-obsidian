@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.3] - 2026-04-09
+
+### Fixed
+- **CRITICAL**: `log-tools.sh` had a hardcoded personal vault path instead of `__VAULT_PATH__` placeholder — every installed copy wrote to the wrong location
+- `recent_sessions` double-push: `unshift()` was called in both context-save and MOC-generation blocks, creating duplicate entries
+- Daily note insertion: replaced `sed /a\` with `awk` for true cross-platform compatibility (macOS BSD sed + special chars in project names)
+- Uninstall regex `[\s\S]*?(?=\n#+ )` stopped at `###` subsections — changed to `(?=\n## |\s*$)` to remove the full Obsidian section
+- Release command `/release` step 5 referenced removed version strings — removed obsolete step
+
+### Added
+- Configuration section added to English and Chinese READMEs (was missing entirely)
+- `project_roots` and `context_injection` fields added to config table in all READMEs
+- Test assertion verifying vault path is actually written into `log-tools.sh`
+
+### Changed
+- Dataview query column header translated: `"Дата"` → `"Date"` (EN), `"日期"` (ZH)
+- `CONTRIBUTING.md` updated with current project structure (skills/, .claude/commands/, multilingual files, VERSION, CHANGELOG)
+
 ## [2.0.2] - 2026-04-09
 
 ### Fixed
@@ -59,7 +77,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cross-platform support: Windows (Git Bash), macOS, Linux
 - sed-based JSON parsing on hot paths for sub-50ms execution
 
-[Unreleased]: https://github.com/paradoxcalm/claude-code-to-obsidian/compare/v2.0.2...HEAD
+[Unreleased]: https://github.com/paradoxcalm/claude-code-to-obsidian/compare/v2.0.3...HEAD
+[2.0.3]: https://github.com/paradoxcalm/claude-code-to-obsidian/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/paradoxcalm/claude-code-to-obsidian/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/paradoxcalm/claude-code-to-obsidian/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/paradoxcalm/claude-code-to-obsidian/compare/v1.0.0...v2.0.0

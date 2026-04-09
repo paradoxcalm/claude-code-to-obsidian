@@ -56,11 +56,7 @@ git diff --stat <последний_тег>..HEAD
 
 Запиши новую версию в файл `VERSION` (одна строка, без пробелов).
 
-### 5. Обнови версию в файлах проекта
-
-Если в `global-claude.*.md` или хуках есть строка с номером версии (например `v3`) — обнови её.
-
-### 6. Коммит
+### 5. Коммит
 
 ```bash
 git add VERSION CHANGELOG.md
@@ -68,13 +64,13 @@ git add VERSION CHANGELOG.md
 git commit -m "release: vX.Y.Z"
 ```
 
-### 7. Тег
+### 6. Тег
 
 ```bash
 git tag -a vX.Y.Z -m "Release vX.Y.Z"
 ```
 
-### 8. Push
+### 7. Push
 
 **Спроси подтверждение** перед push!
 
@@ -83,7 +79,7 @@ git push origin main
 git push origin vX.Y.Z
 ```
 
-### 9. GitHub Release
+### 8. GitHub Release
 
 Извлеки секцию новой версии из CHANGELOG.md и создай релиз:
 
@@ -91,7 +87,7 @@ git push origin vX.Y.Z
 gh release create vX.Y.Z --title "vX.Y.Z" --notes "$(секция из changelog)"
 ```
 
-### 10. Отчёт
+### 9. Отчёт
 
 Покажи пользователю:
 - Новая версия: vX.Y.Z

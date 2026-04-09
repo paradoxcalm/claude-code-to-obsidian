@@ -139,6 +139,32 @@ MyVault/
 #会话 #my-app #auth #oauth
 ```
 
+## 配置
+
+安装后，vault 中会创建 `.obsidian-logger.json`：
+
+```json
+{
+  "min_tool_calls": 5,
+  "log_retention_days": 30,
+  "language": "zh",
+  "canvas": false,
+  "daily_notes": true,
+  "stale_threshold_days": 5
+}
+```
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `min_tool_calls` | `5` | 触发 AUTOLOG 提醒的最少工具调用次数 |
+| `log_retention_days` | `30` | 技术文件的保留天数 (`.tool-log-*`, `.logged-*`, `.reminded-*`) |
+| `language` | `ru` | 日志和提醒语言 (`ru`, `en`, `zh`) |
+| `canvas` | `false` | Obsidian Canvas 格式的可视化项目地图 (`.canvas`) |
+| `daily_notes` | `true` | 自动将会话记录到每日笔记 |
+| `stale_threshold_days` | `5` | 无活动天数后显示"项目闲置"警告 |
+| `project_roots` | `{}` | 目录路径到项目名称的手动映射 |
+| `context_injection` | `true` | 启用/禁用会话开始时的自动上下文注入 |
+
 ## 卸载
 
 ```bash
@@ -158,7 +184,7 @@ bash uninstall.sh
 最近一周的所有会话：
 ````markdown
 ```dataview
-TABLE file.cday as "Дата"
+TABLE file.cday as "日期"
 FROM "sessions"
 WHERE file.cday >= date(today) - dur(7 days)
 SORT file.cday DESC

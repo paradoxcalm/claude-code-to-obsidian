@@ -100,6 +100,7 @@ assert_file_exists "$TMP_CLAUDE/.claude/settings.json" "settings.json created"
 assert_file_exists "$TMP_CLAUDE/.claude/CLAUDE.md" "global CLAUDE.md created"
 
 assert_not_contains "$TMP_VAULT/scripts/log-tools.sh" "__VAULT_PATH__" "placeholder replaced in log-tools.sh"
+assert_contains "$TMP_VAULT/scripts/log-tools.sh" "test-vault" "vault path written into log-tools.sh"
 assert_not_contains "$TMP_VAULT/scripts/session-reminder.sh" "__VAULT_PATH__" "placeholder replaced in session-reminder.sh"
 assert_not_contains "$TMP_VAULT/scripts/log-session.sh" "__VAULT_PATH__" "placeholder replaced in log-session.sh"
 assert_not_contains "$TMP_VAULT/.claude/skills/obsidian-logger/SKILL.md" "__VAULT_PATH__" "placeholder replaced in SKILL.md"
