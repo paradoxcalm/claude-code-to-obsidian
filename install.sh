@@ -220,6 +220,7 @@ mkdir -p "$VAULT_PATH/projects"
 mkdir -p "$VAULT_PATH/archive"
 mkdir -p "$VAULT_PATH/templates"
 mkdir -p "$VAULT_PATH/scripts"
+mkdir -p "$VAULT_PATH/.claude/skills/obsidian-logger"
 
 VAULT_PATH_ESCAPED=$(printf '%s' "$VAULT_PATH" | sed 's/[&|\\/]/\\&/g')
 
@@ -246,6 +247,20 @@ for tmpl in daily meeting project; do
     cp "$SCRIPT_DIR/templates/${tmpl}.ru.md" "$VAULT_PATH/templates/${tmpl}.md" 2>/dev/null || true
   fi
 done
+
+# Копируем skill-файл на выбранном языке
+SKILL_SRC="$SCRIPT_DIR/skills/SKILL.${LANG_CHOICE}.md"
+[ ! -f "$SKILL_SRC" ] && SKILL_SRC="$SCRIPT_DIR/skills/SKILL.en.md"
+SKILL_DST="$VAULT_PATH/.claude/skills/obsidian-logger/SKILL.md"
+
+VAULT_PATH="$VAULT_PATH" SCRIPT_SRC="$SKILL_SRC" SCRIPT_DST="$SKILL_DST" node -e "
+  const fs = require('fs');
+  const content = fs.readFileSync(process.env.SCRIPT_SRC, 'utf8');
+  fs.writeFileSync(process.env.SCRIPT_DST,
+    content.replace(/__VAULT_PATH__/g, () => process.env.VAULT_PATH));
+" 2>/dev/null || {
+  sed "s|__VAULT_PATH__|${VAULT_PATH_ESCAPED}|g" "$SKILL_SRC" > "$SKILL_DST"
+}
 
 # Создаём конфиг с выбранным языком
 if [ ! -f "$VAULT_PATH/.obsidian-logger.json" ]; then

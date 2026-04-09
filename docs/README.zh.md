@@ -74,6 +74,10 @@ bash install.sh /c/Users/YourName/Documents/MyVault
 ```
 MyVault/
 ├── CLAUDE.md           # vault 使用规则
+├── .claude/
+│   └── skills/
+│       └── obsidian-logger/
+│           └── SKILL.md    # Vault 操作技能
 ├── sessions/           # ← 会话日志（自动生成）
 │   ├── 2024-03-15_14-30_my-project.md
 │   ├── 2024-03-15_16-00_other-project.md

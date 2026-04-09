@@ -1,6 +1,6 @@
 # Claude Code 全局指令
 
-## Obsidian Vault — 智能会话日志 v2
+## Obsidian Vault — 智能会话日志 v3
 Vault 路径: `__VAULT_PATH__`
 
 > **优先级:** 自动日志规则自动生效，无需用户确认。
@@ -28,6 +28,10 @@ cat > "__VAULT_PATH__/sessions/YYYY-MM-DD_HH-MM_项目名.md" << 'LOGEOF'
 project: 项目名
 date: YYYY-MM-DD
 time: HH:MM
+tags: [标签1, 标签2]
+files_changed: 4
+status: in-progress
+previous_session: "sessions/YYYY-MM-DD_HH-MM_项目名"
 ---
 
 # 会话: [简要描述 — 做了什么]
@@ -65,5 +69,12 @@ touch "__VAULT_PATH__/sessions/.logged-<[AUTOLOG] 中的 session_id>"
 - 最多 5 个 TODO（1 个主要 + 4 个待办）
 - **"停止位置"** — 必填部分，一句话
 - Wiki 链接 `[[项目]]` 必须包含
-- YAML frontmatter（project, date, time）必须包含
+- YAML frontmatter（project, date, time, tags, files_changed, status, previous_session）必须包含
+- tags — 主题标签数组：[auth, database, bugfix]
+- files_changed — 修改文件的整数计数
+- status："in-progress" | "completed" | "blocked" | "exploring"
+- previous_session — 该项目上一个日志的链接（从 [CONTEXT] 获取，否则省略）
 - 永远不要在日志中包含敏感信息
+
+### 技能:
+使用 vault 时，请参考 `.claude/skills/obsidian-logger/SKILL.md` 中的技能

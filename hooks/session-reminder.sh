@@ -1,5 +1,5 @@
 #!/bin/bash
-# Stop hook v2: контекст-инъекция при первом вызове + AUTOLOG напоминание
+# Stop hook v3: контекст-инъекция при первом вызове + AUTOLOG напоминание
 # Срабатывает после каждого ответа Claude
 # stdout → попадает в контекст Claude
 
@@ -234,23 +234,39 @@ touch "$REMINDED"
 VAULT_BASE="__VAULT_PATH__"
 HHMM=$(date +"%H-%M")
 
+# Находим предыдущую сессию для previous_session
+PREV_SESSION=""
+PREV_SESSION_FILE=$(ls -t "${VAULT}/"*"${PROJECT}"*.md 2>/dev/null | head -1)
+if [ -n "$PREV_SESSION_FILE" ]; then
+  PREV_SESSION=$(basename "$PREV_SESSION_FILE" .md)
+fi
+
 case "$LANG_CFG" in
   en)
     printf '[AUTOLOG] Significant session (%s tool calls). Write a detailed log:\n' "$TOOL_COUNT"
     printf -- '- Path: %s/sessions/%s_%s_%s.md\n' "$VAULT_BASE" "$DATE" "$HHMM" "$PROJECT"
     printf -- '- Include: what was done, files, decisions, TODO\n'
+    if [ -n "$PREV_SESSION" ]; then
+      printf -- '- Previous session: %s (use in frontmatter previous_session field)\n' "$PREV_SESSION"
+    fi
     printf -- '- After writing run: touch "%s/sessions/.logged-%s"\n' "$VAULT_BASE" "$SESSION_ID"
     ;;
   zh)
     printf '[AUTOLOG] 重要会话（%s 次工具调用）。请写入详细日志：\n' "$TOOL_COUNT"
     printf -- '- 路径: %s/sessions/%s_%s_%s.md\n' "$VAULT_BASE" "$DATE" "$HHMM" "$PROJECT"
     printf -- '- 包含: 完成的工作、文件、决策、TODO\n'
+    if [ -n "$PREV_SESSION" ]; then
+      printf -- '- 上次会话: %s（用于 frontmatter previous_session 字段）\n' "$PREV_SESSION"
+    fi
     printf -- '- 写入后执行: touch "%s/sessions/.logged-%s"\n' "$VAULT_BASE" "$SESSION_ID"
     ;;
   *)
     printf '[AUTOLOG] Сессия существенная (%s tool calls). Запиши подробный лог:\n' "$TOOL_COUNT"
     printf -- '- Путь: %s/sessions/%s_%s_%s.md\n' "$VAULT_BASE" "$DATE" "$HHMM" "$PROJECT"
     printf -- '- Включи: что сделано, файлы, решения, TODO\n'
+    if [ -n "$PREV_SESSION" ]; then
+      printf -- '- Предыдущая сессия: %s (используй в frontmatter previous_session)\n' "$PREV_SESSION"
+    fi
     printf -- '- После записи выполни: touch "%s/sessions/.logged-%s"\n' "$VAULT_BASE" "$SESSION_ID"
     ;;
 esac

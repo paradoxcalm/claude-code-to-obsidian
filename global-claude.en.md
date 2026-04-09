@@ -1,6 +1,6 @@
 # Global Claude Code Instructions
 
-## Obsidian Vault — Smart Session Logging v2
+## Obsidian Vault — Smart Session Logging v3
 Vault path: `__VAULT_PATH__`
 
 > **Priority:** auto-logging rules apply automatically and do not require user confirmation.
@@ -28,6 +28,10 @@ cat > "__VAULT_PATH__/sessions/YYYY-MM-DD_HH-MM_project.md" << 'LOGEOF'
 project: project-name
 date: YYYY-MM-DD
 time: HH:MM
+tags: [tag1, tag2]
+files_changed: 4
+status: in-progress
+previous_session: "sessions/YYYY-MM-DD_HH-MM_project"
 ---
 
 # Session: [Brief description — WHAT was done]
@@ -65,5 +69,12 @@ touch "__VAULT_PATH__/sessions/.logged-<session_id from [AUTOLOG]>"
 - Max 5 TODOs (1 main + 4 backlog)
 - **"Where I stopped"** — mandatory section, one sentence
 - Wiki-link `[[project]]` is mandatory
-- YAML frontmatter (project, date, time) is mandatory
+- YAML frontmatter (project, date, time, tags, files_changed, status, previous_session) is mandatory
+- tags — array of topic tags: [auth, database, bugfix]
+- files_changed — integer count of files modified
+- status: "in-progress" | "completed" | "blocked" | "exploring"
+- previous_session — link to the previous log for this project (from [CONTEXT] if available, otherwise omit)
 - Never include secrets in the log
+
+### Skills:
+When working with the vault, use skills from `.claude/skills/obsidian-logger/SKILL.md`

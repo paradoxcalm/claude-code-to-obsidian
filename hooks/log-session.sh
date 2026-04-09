@@ -1,5 +1,5 @@
 #!/bin/bash
-# SessionEnd hook v2: сохраняет контекст проекта, обновляет daily note, создаёт project page
+# SessionEnd hook v3: сохраняет контекст проекта, обновляет daily note, создаёт project page
 # Срабатывает при завершении сессии Claude Code
 
 VAULT_ROOT="__VAULT_PATH__"
@@ -82,6 +82,13 @@ fi
 
 mkdir -p "$VAULT" "$PROJECTS"
 
+# Находим предыдущую сессию этого проекта (для previous_session)
+PREV_SESSION=""
+PREV_SESSION_FILE=$(ls -t "${VAULT}/"*"${PROJECT}"*.md 2>/dev/null | head -1)
+if [ -n "$PREV_SESSION_FILE" ]; then
+  PREV_SESSION=$(basename "$PREV_SESSION_FILE" .md)
+fi
+
 # ============================================================
 # 1. СТАБ-ЛОГ СЕССИИ (если Claude не записал)
 # ============================================================
@@ -97,7 +104,13 @@ if [ "$SKIP_STUB" = "false" ]; then
     printf 'project: %s\n' "$PROJECT"
     printf 'date: %s\n' "$DATE"
     printf 'time: %s\n' "$HHMM"
+    printf 'tags: [%s]\n' "$PROJECT"
+    printf 'files_changed: 0\n'
+    printf 'status: completed\n'
     printf 'session_id: %s\n' "$SESSION_ID"
+    if [ -n "$PREV_SESSION" ]; then
+      printf 'previous_session: "sessions/%s"\n' "$PREV_SESSION"
+    fi
     printf -- '---\n\n'
 
     case "$LANG_CFG" in

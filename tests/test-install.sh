@@ -94,6 +94,7 @@ assert_file_exists "$TMP_VAULT/scripts/log-tools.sh" "scripts/log-tools.sh creat
 assert_file_exists "$TMP_VAULT/scripts/session-reminder.sh" "scripts/session-reminder.sh created"
 assert_file_exists "$TMP_VAULT/scripts/log-session.sh" "scripts/log-session.sh created"
 assert_file_exists "$TMP_VAULT/CLAUDE.md" "vault CLAUDE.md created"
+assert_file_exists "$TMP_VAULT/.claude/skills/obsidian-logger/SKILL.md" "skill file installed"
 assert_file_exists "$TMP_VAULT/.obsidian-logger.json" "config created"
 assert_file_exists "$TMP_CLAUDE/.claude/settings.json" "settings.json created"
 assert_file_exists "$TMP_CLAUDE/.claude/CLAUDE.md" "global CLAUDE.md created"
@@ -101,6 +102,7 @@ assert_file_exists "$TMP_CLAUDE/.claude/CLAUDE.md" "global CLAUDE.md created"
 assert_not_contains "$TMP_VAULT/scripts/log-tools.sh" "__VAULT_PATH__" "placeholder replaced in log-tools.sh"
 assert_not_contains "$TMP_VAULT/scripts/session-reminder.sh" "__VAULT_PATH__" "placeholder replaced in session-reminder.sh"
 assert_not_contains "$TMP_VAULT/scripts/log-session.sh" "__VAULT_PATH__" "placeholder replaced in log-session.sh"
+assert_not_contains "$TMP_VAULT/.claude/skills/obsidian-logger/SKILL.md" "__VAULT_PATH__" "placeholder replaced in SKILL.md"
 
 assert_contains "$TMP_CLAUDE/.claude/settings.json" "session-reminder.sh" "Stop hook added"
 assert_contains "$TMP_CLAUDE/.claude/settings.json" "log-session.sh" "SessionEnd hook added"
@@ -205,6 +207,7 @@ echo "2" | bash "$SCRIPT_DIR/install.sh" "$TMP_VAULT"
 assert_contains "$TMP_VAULT/.obsidian-logger.json" '"language": "en"' "language=en in config"
 assert_file_exists "$TMP_VAULT/CLAUDE.md" "vault CLAUDE.md created (EN)"
 assert_file_exists "$TMP_CLAUDE/.claude/CLAUDE.md" "global CLAUDE.md created (EN)"
+assert_file_exists "$TMP_VAULT/.claude/skills/obsidian-logger/SKILL.md" "skill file installed (EN)"
 
 echo ""
 
@@ -221,6 +224,20 @@ echo "3" | bash "$SCRIPT_DIR/install.sh" "$TMP_VAULT"
 assert_contains "$TMP_VAULT/.obsidian-logger.json" '"language": "zh"' "language=zh in config"
 assert_file_exists "$TMP_VAULT/CLAUDE.md" "vault CLAUDE.md created (ZH)"
 assert_file_exists "$TMP_CLAUDE/.claude/CLAUDE.md" "global CLAUDE.md created (ZH)"
+assert_file_exists "$TMP_VAULT/.claude/skills/obsidian-logger/SKILL.md" "skill file installed (ZH)"
+
+echo ""
+
+# ============================================================
+# Test 9: v3 frontmatter fields in CLAUDE.md
+# ============================================================
+echo -e "${YELLOW}[9] v3 frontmatter fields${NC}"
+
+assert_contains "$TMP_CLAUDE/.claude/CLAUDE.md" "tags:" "CLAUDE.md contains tags field"
+assert_contains "$TMP_CLAUDE/.claude/CLAUDE.md" "files_changed:" "CLAUDE.md contains files_changed field"
+assert_contains "$TMP_CLAUDE/.claude/CLAUDE.md" "status:" "CLAUDE.md contains status field"
+assert_contains "$TMP_CLAUDE/.claude/CLAUDE.md" "previous_session:" "CLAUDE.md contains previous_session field"
+assert_contains "$TMP_CLAUDE/.claude/CLAUDE.md" "v3" "CLAUDE.md contains v3 version"
 
 echo ""
 

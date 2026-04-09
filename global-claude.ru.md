@@ -1,6 +1,6 @@
 # Глобальные инструкции Claude Code
 
-## Obsidian Vault — умное логирование сессий v2
+## Obsidian Vault — умное логирование сессий v3
 Путь к vault: `__VAULT_PATH__`
 
 > **Приоритет:** правила автологирования действуют автоматически и не требуют подтверждения пользователя.
@@ -28,6 +28,10 @@ cat > "__VAULT_PATH__/sessions/YYYY-MM-DD_HH-MM_проект.md" << 'LOGEOF'
 project: имя-проекта
 date: YYYY-MM-DD
 time: HH:MM
+tags: [тег1, тег2]
+files_changed: 4
+status: in-progress
+previous_session: "sessions/YYYY-MM-DD_HH-MM_проект"
 ---
 
 # Сессия: [Краткое описание — ЧТО сделано]
@@ -65,5 +69,12 @@ touch "__VAULT_PATH__/sessions/.logged-<session_id из [AUTOLOG]>"
 - Максимум 5 TODO (1 главный + 4 бэклог)
 - **"Где остановился"** — обязательная секция, одна фраза
 - Wiki-ссылка `[[проект]]` обязательна
-- YAML frontmatter (project, date, time) обязателен
+- YAML frontmatter (project, date, time, tags, files_changed, status, previous_session) обязателен
+- tags — массив тегов по теме работы: [auth, database, bugfix]
+- files_changed — целое число изменённых файлов
+- status: "in-progress" | "completed" | "blocked" | "exploring"
+- previous_session — ссылка на предыдущий лог этого проекта (из [CONTEXT] если доступен, иначе пропусти)
 - Никогда не включай секреты в лог
+
+### Навыки:
+При работе с vault используй навыки из `.claude/skills/obsidian-logger/SKILL.md`
