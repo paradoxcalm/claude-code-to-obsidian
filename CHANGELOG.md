@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-04-09
+
+### Fixed
+- `previous_session` lookup now uses `grep` on frontmatter `project:` field instead of filename glob (prevents false matches like `app` matching `my-app-backend`)
+- Daily note session insertion now uses `sed` to place entries after the section header, not blindly at end of file
+
+### Changed
+- README: added `canvas`, `daily_notes`, `stale_threshold_days` to configuration table
+
 ## [2.0.0] - 2026-04-09
 
 ### Added
@@ -43,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cross-platform support: Windows (Git Bash), macOS, Linux
 - sed-based JSON parsing on hot paths for sub-50ms execution
 
-[Unreleased]: https://github.com/paradoxcalm/claude-code-to-obsidian/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/paradoxcalm/claude-code-to-obsidian/compare/v2.0.1...HEAD
+[2.0.1]: https://github.com/paradoxcalm/claude-code-to-obsidian/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/paradoxcalm/claude-code-to-obsidian/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/paradoxcalm/claude-code-to-obsidian/releases/tag/v1.0.0
