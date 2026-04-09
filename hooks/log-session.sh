@@ -82,9 +82,9 @@ fi
 
 mkdir -p "$VAULT" "$PROJECTS"
 
-# Находим предыдущую сессию этого проекта (для previous_session)
+# Находим предыдущую сессию этого проекта (точный grep по frontmatter)
 PREV_SESSION=""
-PREV_SESSION_FILE=$(ls -t "${VAULT}/"*"${PROJECT}"*.md 2>/dev/null | head -1)
+PREV_SESSION_FILE=$(grep -rl "^project: ${PROJECT}$" "${VAULT}/"*.md 2>/dev/null | xargs ls -t 2>/dev/null | head -1)
 if [ -n "$PREV_SESSION_FILE" ]; then
   PREV_SESSION=$(basename "$PREV_SESSION_FILE" .md)
 fi
@@ -469,10 +469,16 @@ if [ "$DAILY_NOTES" = "true" ]; then
         ;;
     esac
   else
-    # Дописываем строку в существующий daily note (перед ##  или в конец)
+    # Дописываем строку в существующий daily note — после заголовка секции сессий
     if ! grep -qF "[[${PROJECT}]]" "$DAILY_FILE" 2>/dev/null; then
-      # Ищем секцию "Сессии/Sessions/会话" и дописываем после неё
-      printf -- '- %s — [[%s]] — %s tool calls\n' "$HHMM" "$PROJECT" "$TOOL_COUNT" >> "$DAILY_FILE"
+      DAILY_LINE=$(printf -- '- %s — [[%s]] — %s tool calls' "$HHMM" "$PROJECT" "$TOOL_COUNT")
+      # Ищем секцию "## Сессии" / "## Sessions" / "## 会话" и вставляем после неё
+      if grep -qE "^## (Сессии|Sessions|会话)" "$DAILY_FILE" 2>/dev/null; then
+        sed -i "/^## \(Сессии\|Sessions\|会话\)/a\\${DAILY_LINE}" "$DAILY_FILE"
+      else
+        # Секции нет — дописываем в конец
+        printf '\n%s\n' "$DAILY_LINE" >> "$DAILY_FILE"
+      fi
     fi
   fi
 fi

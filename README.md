@@ -151,7 +151,10 @@ MyVault/
 {
   "min_tool_calls": 5,
   "log_retention_days": 30,
-  "language": "ru"
+  "language": "ru",
+  "canvas": false,
+  "daily_notes": true,
+  "stale_threshold_days": 5
 }
 ```
 
@@ -160,6 +163,9 @@ MyVault/
 | `min_tool_calls` | `5` | Минимум tool calls для срабатывания напоминания |
 | `log_retention_days` | `30` | Через сколько дней удалять технические файлы (`.tool-log-*`, `.logged-*`, `.reminded-*`) |
 | `language` | `ru` | Язык логов и напоминаний (`ru`, `en`, `zh`) |
+| `canvas` | `false` | Визуальная карта проекта в формате Obsidian Canvas (`.canvas`) |
+| `daily_notes` | `true` | Автоматическая запись сессий в daily notes |
+| `stale_threshold_days` | `5` | Дней без активности для предупреждения о "забытом" проекте |
 
 ## Тесты
 

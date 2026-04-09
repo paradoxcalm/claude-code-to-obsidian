@@ -234,9 +234,9 @@ touch "$REMINDED"
 VAULT_BASE="__VAULT_PATH__"
 HHMM=$(date +"%H-%M")
 
-# Находим предыдущую сессию для previous_session
+# Находим предыдущую сессию для previous_session (точный grep по frontmatter)
 PREV_SESSION=""
-PREV_SESSION_FILE=$(ls -t "${VAULT}/"*"${PROJECT}"*.md 2>/dev/null | head -1)
+PREV_SESSION_FILE=$(grep -rl "^project: ${PROJECT}$" "${VAULT}/"*.md 2>/dev/null | xargs ls -t 2>/dev/null | head -1)
 if [ -n "$PREV_SESSION_FILE" ]; then
   PREV_SESSION=$(basename "$PREV_SESSION_FILE" .md)
 fi
