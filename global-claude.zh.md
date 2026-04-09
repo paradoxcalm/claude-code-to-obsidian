@@ -1,6 +1,6 @@
 # Claude Code 全局指令
 
-## Obsidian Vault — 智能会话日志 v3
+## Obsidian Vault — 智能会话日志
 Vault 路径: `__VAULT_PATH__`
 
 > **优先级:** 自动日志规则自动生效，无需用户确认。

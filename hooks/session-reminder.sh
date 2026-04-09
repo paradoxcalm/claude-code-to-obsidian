@@ -1,5 +1,5 @@
 #!/bin/bash
-# Stop hook v3: контекст-инъекция при первом вызове + AUTOLOG напоминание
+# Stop hook: контекст-инъекция при первом вызове + AUTOLOG напоминание
 # Срабатывает после каждого ответа Claude
 # stdout → попадает в контекст Claude
 
@@ -234,11 +234,11 @@ touch "$REMINDED"
 VAULT_BASE="__VAULT_PATH__"
 HHMM=$(date +"%H-%M")
 
-# Находим предыдущую сессию для previous_session (точный grep по frontmatter)
+# Находим предыдущую сессию из контекст-кэша (быстро, O(1))
 PREV_SESSION=""
-PREV_SESSION_FILE=$(grep -rl "^project: ${PROJECT}$" "${VAULT}/"*.md 2>/dev/null | xargs ls -t 2>/dev/null | head -1)
-if [ -n "$PREV_SESSION_FILE" ]; then
-  PREV_SESSION=$(basename "$PREV_SESSION_FILE" .md)
+CTX_PREV="${PROJECTS}/.context-${PROJECT}.json"
+if [ -f "$CTX_PREV" ]; then
+  PREV_SESSION=$(sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CTX_PREV" 2>/dev/null | head -1)
 fi
 
 case "$LANG_CFG" in

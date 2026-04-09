@@ -229,15 +229,14 @@ assert_file_exists "$TMP_VAULT/.claude/skills/obsidian-logger/SKILL.md" "skill f
 echo ""
 
 # ============================================================
-# Test 9: v3 frontmatter fields in CLAUDE.md
+# Test 9: Extended frontmatter fields in CLAUDE.md
 # ============================================================
-echo -e "${YELLOW}[9] v3 frontmatter fields${NC}"
+echo -e "${YELLOW}[9] Extended frontmatter fields${NC}"
 
 assert_contains "$TMP_CLAUDE/.claude/CLAUDE.md" "tags:" "CLAUDE.md contains tags field"
 assert_contains "$TMP_CLAUDE/.claude/CLAUDE.md" "files_changed:" "CLAUDE.md contains files_changed field"
 assert_contains "$TMP_CLAUDE/.claude/CLAUDE.md" "status:" "CLAUDE.md contains status field"
 assert_contains "$TMP_CLAUDE/.claude/CLAUDE.md" "previous_session:" "CLAUDE.md contains previous_session field"
-assert_contains "$TMP_CLAUDE/.claude/CLAUDE.md" "v3" "CLAUDE.md contains v3 version"
 
 echo ""
 

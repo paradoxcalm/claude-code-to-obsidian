@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-04-09
+
+### Fixed
+- Removed hardcoded version strings (v3) from hooks and instruction files — single source of truth is now `VERSION` file
+- Daily note insertion: replaced `sed -i` with temp-file approach for macOS compatibility
+- `previous_session` lookup: replaced slow `grep -rl` with instant read from `.context-{PROJECT}.json` cache
+
 ## [2.0.1] - 2026-04-09
 
 ### Fixed
@@ -52,7 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cross-platform support: Windows (Git Bash), macOS, Linux
 - sed-based JSON parsing on hot paths for sub-50ms execution
 
-[Unreleased]: https://github.com/paradoxcalm/claude-code-to-obsidian/compare/v2.0.1...HEAD
+[Unreleased]: https://github.com/paradoxcalm/claude-code-to-obsidian/compare/v2.0.2...HEAD
+[2.0.2]: https://github.com/paradoxcalm/claude-code-to-obsidian/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/paradoxcalm/claude-code-to-obsidian/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/paradoxcalm/claude-code-to-obsidian/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/paradoxcalm/claude-code-to-obsidian/releases/tag/v1.0.0

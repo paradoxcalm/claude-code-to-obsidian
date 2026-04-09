@@ -1,5 +1,5 @@
 #!/bin/bash
-# SessionEnd hook v3: сохраняет контекст проекта, обновляет daily note, создаёт project page
+# SessionEnd hook: сохраняет контекст проекта, обновляет daily note, создаёт project page
 # Срабатывает при завершении сессии Claude Code
 
 VAULT_ROOT="__VAULT_PATH__"
@@ -82,11 +82,10 @@ fi
 
 mkdir -p "$VAULT" "$PROJECTS"
 
-# Находим предыдущую сессию этого проекта (точный grep по frontmatter)
+# Находим предыдущую сессию из контекст-кэша (быстро, O(1))
 PREV_SESSION=""
-PREV_SESSION_FILE=$(grep -rl "^project: ${PROJECT}$" "${VAULT}/"*.md 2>/dev/null | xargs ls -t 2>/dev/null | head -1)
-if [ -n "$PREV_SESSION_FILE" ]; then
-  PREV_SESSION=$(basename "$PREV_SESSION_FILE" .md)
+if [ -f "${PROJECTS}/.context-${PROJECT}.json" ]; then
+  PREV_SESSION=$(sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${PROJECTS}/.context-${PROJECT}.json" 2>/dev/null | head -1)
 fi
 
 # ============================================================
@@ -474,7 +473,10 @@ if [ "$DAILY_NOTES" = "true" ]; then
       DAILY_LINE=$(printf -- '- %s — [[%s]] — %s tool calls' "$HHMM" "$PROJECT" "$TOOL_COUNT")
       # Ищем секцию "## Сессии" / "## Sessions" / "## 会话" и вставляем после неё
       if grep -qE "^## (Сессии|Sessions|会话)" "$DAILY_FILE" 2>/dev/null; then
-        sed -i "/^## \(Сессии\|Sessions\|会话\)/a\\${DAILY_LINE}" "$DAILY_FILE"
+        # Кроссплатформенный sed (macOS sed -i требует '' аргумент)
+        DAILY_TMP="${DAILY_FILE}.tmp.$$"
+        sed "/^## \(Сессии\|Sessions\|会话\)/a\\
+${DAILY_LINE}" "$DAILY_FILE" > "$DAILY_TMP" && mv "$DAILY_TMP" "$DAILY_FILE"
       else
         # Секции нет — дописываем в конец
         printf '\n%s\n' "$DAILY_LINE" >> "$DAILY_FILE"

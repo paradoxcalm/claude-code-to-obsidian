@@ -1,6 +1,6 @@
 # Global Claude Code Instructions
 
-## Obsidian Vault — Smart Session Logging v3
+## Obsidian Vault — Smart Session Logging
 Vault path: `__VAULT_PATH__`
 
 > **Priority:** auto-logging rules apply automatically and do not require user confirmation.
