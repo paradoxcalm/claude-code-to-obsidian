@@ -216,10 +216,15 @@ if [ -f "$CONFIG" ]; then
   [ -n "$_lang" ] && LANG_CFG="$_lang"
 fi
 
-# Считаем tool calls текущей сессии
+# Считаем tool calls: session_id + fallback на CWD (ловит sub-agent вызовы)
 TOOL_COUNT=0
 if [ -f "$TOOL_LOG" ]; then
   TOOL_COUNT=$(grep -cF "| ${SESSION_ID} |" "$TOOL_LOG" 2>/dev/null || true)
+  TOOL_COUNT=${TOOL_COUNT:-0}
+  # Fallback: если session_id не нашёл — ищем по CWD (sub-agent случай, exact match)
+  if [ "$TOOL_COUNT" -eq 0 ] 2>/dev/null && [ -n "$CWD" ] && [ "$CWD" != "unknown" ]; then
+    TOOL_COUNT=$(awk -F'|' -v cwd="$CWD" '{gsub(/^[ \t]+|[ \t]+$/,"",$4)} $4==cwd{c++} END{print c+0}' "$TOOL_LOG" 2>/dev/null || echo 0)
+  fi
 fi
 TOOL_COUNT=${TOOL_COUNT:-0}
 

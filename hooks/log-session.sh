@@ -41,11 +41,16 @@ if [ -z "$PROJECT" ]; then
 fi
 [ -z "$PROJECT" ] && PROJECT="general"
 
-# Считаем tool calls этой сессии
+# Считаем tool calls: session_id + fallback на CWD (ловит sub-agent вызовы)
 TOOL_LOG="${VAULT}/.tool-log-${DATE}.txt"
 TOOL_COUNT=0
 if [ -f "$TOOL_LOG" ]; then
   TOOL_COUNT=$(grep -cF "| ${SESSION_ID} |" "$TOOL_LOG" 2>/dev/null || true)
+  TOOL_COUNT=${TOOL_COUNT:-0}
+  # Fallback: если session_id не нашёл tool calls — ищем по CWD (sub-agent случай)
+  if [ "$TOOL_COUNT" -eq 0 ] 2>/dev/null && [ "$CWD" != "unknown" ]; then
+    TOOL_COUNT=$(awk -F'|' -v cwd="$CWD" '{gsub(/^[ \t]+|[ \t]+$/,"",$4)} $4==cwd{c++} END{print c+0}' "$TOOL_LOG" 2>/dev/null || echo 0)
+  fi
 fi
 TOOL_COUNT=${TOOL_COUNT:-0}
 
@@ -91,6 +96,13 @@ fi
 # ============================================================
 # 1. СТАБ-ЛОГ СЕССИИ (если Claude не записал)
 # ============================================================
+
+# Извлекаем какие инструменты использовались (для информативного стаба)
+TOOLS_USED=""
+if [ -f "$TOOL_LOG" ] && [ "$TOOL_COUNT" -gt 0 ] && [ "$CWD" != "unknown" ]; then
+  TOOLS_USED=$(awk -F'|' -v cwd="$CWD" '{gsub(/^[ \t]+|[ \t]+$/,"",$4); gsub(/^[ \t]+|[ \t]+$/,"",$3)} $4==cwd{count[$3]++} END{for(k in count) print count[k], k}' "$TOOL_LOG" 2>/dev/null | sort -rn | head -8 | awk '{printf "%s x%s, ", $2, $1}' | sed 's/, $//')
+fi
+
 if [ "$SKIP_STUB" = "false" ]; then
   LOGFILE="${VAULT}/${DATE}_${TIME}_${PROJECT}.md"
   if [ -f "$LOGFILE" ]; then
@@ -118,7 +130,11 @@ if [ "$SKIP_STUB" = "false" ]; then
         printf '**Project:** [[%s]]\n' "$PROJECT"
         printf '**Directory:** `%s`\n\n' "$CWD"
         printf '## What was done\n'
-        printf '_Brief session (%s tool calls) — details not recorded_\n\n' "$TOOL_COUNT"
+        if [ -n "$TOOLS_USED" ]; then
+          printf '_Session: %s tool calls (%s)_\n\n' "$TOOL_COUNT" "$TOOLS_USED"
+        else
+          printf '_Brief session (%s tool calls) — details not recorded_\n\n' "$TOOL_COUNT"
+        fi
         printf '#session #%s\n' "$PROJECT"
         ;;
       zh)
@@ -126,7 +142,11 @@ if [ "$SKIP_STUB" = "false" ]; then
         printf '**项目:** [[%s]]\n' "$PROJECT"
         printf '**目录:** `%s`\n\n' "$CWD"
         printf '## 完成内容\n'
-        printf '_简短会话（%s 次工具调用）— 未记录详情_\n\n' "$TOOL_COUNT"
+        if [ -n "$TOOLS_USED" ]; then
+          printf '_会话: %s 次工具调用 (%s)_\n\n' "$TOOL_COUNT" "$TOOLS_USED"
+        else
+          printf '_简短会话（%s 次工具调用）— 未记录详情_\n\n' "$TOOL_COUNT"
+        fi
         printf '#会话 #%s\n' "$PROJECT"
         ;;
       *)
@@ -134,7 +154,11 @@ if [ "$SKIP_STUB" = "false" ]; then
         printf '**Проект:** [[%s]]\n' "$PROJECT"
         printf '**Директория:** `%s`\n\n' "$CWD"
         printf '## Что сделано\n'
-        printf '_Краткая сессия (%s tool calls) — подробности не записаны_\n\n' "$TOOL_COUNT"
+        if [ -n "$TOOLS_USED" ]; then
+          printf '_Сессия: %s tool calls (%s)_\n\n' "$TOOL_COUNT" "$TOOLS_USED"
+        else
+          printf '_Краткая сессия (%s tool calls) — подробности не записаны_\n\n' "$TOOL_COUNT"
+        fi
         printf '#сессия #%s\n' "$PROJECT"
         ;;
     esac
@@ -146,18 +170,23 @@ fi
 # ============================================================
 CONTEXT_FILE="${PROJECTS}/.context-${PROJECT}.json"
 
+# Определяем имя ссылки на сессию (нужно и для контекста, и для MOC)
+SESSION_LINK_NAME="${DATE}_${TIME}_${PROJECT}"
+
 # Находим лог-файл этой сессии (Claude мог записать, или стаб)
 SESSION_LOG=""
 if [ "$SKIP_STUB" = "true" ]; then
   # Claude записал — ищем файл по дате и проекту
   SESSION_LOG=$(ls -t "${VAULT}/${DATE}"*"${PROJECT}"*.md 2>/dev/null | head -1)
+  SESSION_LINK_NAME=$(basename "${SESSION_LOG:-.}" .md)
 else
   SESSION_LOG="$LOGFILE"
 fi
 
 CTX_FILE="$CONTEXT_FILE" LOG_FILE="${SESSION_LOG:-}" \
 CTX_PROJECT="$PROJECT" CTX_DATE="$DATE" CTX_HHMM="$HHMM" \
-CTX_TOOLS="$TOOL_COUNT" CTX_SID="$SESSION_ID" CTX_CWD="$CWD" node -e "
+CTX_TOOLS="$TOOL_COUNT" CTX_SID="$SESSION_ID" CTX_CWD="$CWD" \
+CTX_LINK="$SESSION_LINK_NAME" node -e "
   const fs=require('fs');
   const ctxPath=process.env.CTX_FILE;
   const logPath=process.env.LOG_FILE;
@@ -167,6 +196,7 @@ CTX_TOOLS="$TOOL_COUNT" CTX_SID="$SESSION_ID" CTX_CWD="$CWD" node -e "
   const TOOL_COUNT=process.env.CTX_TOOLS;
   const SESSION_ID=process.env.CTX_SID;
   const CWD=process.env.CTX_CWD;
+  const LINK=process.env.CTX_LINK;
 
   let ctx={};
   try { ctx=JSON.parse(fs.readFileSync(ctxPath,'utf8')); } catch{}
@@ -245,7 +275,7 @@ CTX_TOOLS="$TOOL_COUNT" CTX_SID="$SESSION_ID" CTX_CWD="$CWD" node -e "
 
   // Обновляем recent_sessions (здесь, а не в MOC, чтобы compact sessions тоже попадали)
   const sessions=ctx.recent_sessions||[];
-  sessions.unshift({date:DATE,time:HHMM,tools:parseInt(TOOL_COUNT)||0,summary:summary});
+  sessions.unshift({date:DATE,time:HHMM,tools:parseInt(TOOL_COUNT)||0,summary:summary,link:LINK});
   if(sessions.length>10) sessions.length=10;
   ctx.recent_sessions=sessions;
 
@@ -254,12 +284,11 @@ CTX_TOOLS="$TOOL_COUNT" CTX_SID="$SESSION_ID" CTX_CWD="$CWD" node -e "
 
 # ============================================================
 # 3. СТРАНИЦА ПРОЕКТА (MOC) + 3b. CANVAS + 4. DAILY NOTE
-# Пропускаем в compact mode (короткие сессии < min_tool_calls)
+# MOC/daily обновляются если были tool calls, canvas — только для substantial
 # ============================================================
-if [ "$COMPACT_MODE" = "true" ]; then
-  # Compact: только cleanup, пропускаем MOC/Canvas/daily
+if [ "$TOOL_COUNT" -eq 0 ] 2>/dev/null; then
+  # Нулевая сессия — контекст уже сохранён, остаётся только cleanup
   rm -f "${SESSION_STARTED}" "${VAULT}/.reminded-${SESSION_ID}" 2>/dev/null
-  # Ротация
   if [ "$LOG_RETENTION_DAYS" -gt 0 ] 2>/dev/null; then
     find "$VAULT" -maxdepth 1 -name '.tool-log-*' -type f -mtime +"$LOG_RETENTION_DAYS" -delete 2>/dev/null || true
     find "$VAULT" -maxdepth 1 -name '.logged-*' -type f -mtime +"$LOG_RETENTION_DAYS" -delete 2>/dev/null || true
@@ -269,14 +298,8 @@ if [ "$COMPACT_MODE" = "true" ]; then
   exit 0
 fi
 
-# --- Ниже только для substantial сессий ---
 PROJECT_PAGE="${PROJECTS}/${PROJECT}.md"
-SESSION_LINK_NAME="${DATE}_${TIME}_${PROJECT}"
-
-# Определяем имя файла сессии (стаб или Claude-лог)
-if [ "$SKIP_STUB" = "true" ] && [ -n "$SESSION_LOG" ]; then
-  SESSION_LINK_NAME=$(basename "$SESSION_LOG" .md)
-fi
+# SESSION_LINK_NAME уже вычислен в section 2
 
 CTX_FILE="$CONTEXT_FILE" PROJECT_PAGE="$PROJECT_PAGE" LANG="$LANG_CFG" \
 PROJECT="$PROJECT" DATE="$DATE" HHMM="$HHMM" TOOL_COUNT="$TOOL_COUNT" \
@@ -322,7 +345,8 @@ SESSION_LINK="$SESSION_LINK_NAME" node -e "
   md.push('|------|-------|---|');
   for(const s of sessions){
     const summary=s.summary?(' — '+s.summary.substring(0,60)):'';
-    md.push('| '+s.date+' '+s.time+' | '+s.tools+' | [['+s.link+']]'+summary+' |');
+    const link=s.link||(s.date+'_'+s.time.replace(/:/g,'-')+'_'+project);
+    md.push('| '+s.date+' '+s.time+' | '+s.tools+' | [['+link+']]'+summary+' |');
   }
   md.push('');
 
@@ -342,8 +366,9 @@ SESSION_LINK="$SESSION_LINK_NAME" node -e "
 
 # ============================================================
 # 3b. CANVAS — визуальная карта проекта (опционально, default off)
+# Пропускаем в compact mode (canvas — дорогая операция)
 # ============================================================
-if [ "$CANVAS_ENABLED" = "true" ]; then
+if [ "$CANVAS_ENABLED" = "true" ] && [ "$COMPACT_MODE" != "true" ]; then
 CANVAS_FILE="${PROJECTS}/${PROJECT}.canvas"
 
 CTX_FILE="$CONTEXT_FILE" CANVAS_FILE="$CANVAS_FILE" PROJECT="$PROJECT" node -e "
