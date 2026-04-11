@@ -104,6 +104,23 @@ if [ ! -f "$SESSION_STARTED" ]; then
   PROJECT=$(CFG="$CONFIG" CWD="$CWD" resolve_project "$CWD")
   mkdir -p "$VAULT" "$PROJECTS"
 
+  # Auto-update: если repo доступен и VERSION изменился — пересобираем скрипты
+  if [ -f "$CONFIG" ]; then
+    _repo=$(sed -n 's/.*"repo_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CONFIG" 2>/dev/null)
+    _iver=$(sed -n 's/.*"installed_version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CONFIG" 2>/dev/null)
+    if [ -n "$_repo" ] && [ -f "$_repo/VERSION" ]; then
+      _rver=$(tr -d '[:space:]' < "$_repo/VERSION" 2>/dev/null)
+      if [ -n "$_rver" ] && [ "$_rver" != "$_iver" ]; then
+        for _s in log-session.sh log-tools.sh session-reminder.sh; do
+          [ -f "$_repo/hooks/$_s" ] && sed "s|__VAULT_PATH__|${VAULT_ROOT}|g" "$_repo/hooks/$_s" > "${VAULT_ROOT}/scripts/$_s"
+        done
+        _tmp="${CONFIG}.tmp.$$"
+        sed "s/\"installed_version\"[[:space:]]*:[[:space:]]*\"[^\"]*\"/\"installed_version\": \"$_rver\"/" "$CONFIG" > "$_tmp" && mv "$_tmp" "$CONFIG"
+        printf '[UPDATE] Скрипты обновлены: v%s → v%s\n' "${_iver:-?}" "$_rver"
+      fi
+    fi
+  fi
+
   # Записываем проект в маркер (SessionEnd и повторные Stop прочитают)
   printf '%s' "$PROJECT" > "$SESSION_STARTED"
 

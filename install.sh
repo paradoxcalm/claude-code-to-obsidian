@@ -262,15 +262,29 @@ VAULT_PATH="$VAULT_PATH" SCRIPT_SRC="$SKILL_SRC" SCRIPT_DST="$SKILL_DST" node -e
   sed "s|__VAULT_PATH__|${VAULT_PATH_ESCAPED}|g" "$SKILL_SRC" > "$SKILL_DST"
 }
 
-# Создаём конфиг с выбранным языком
+# Создаём/обновляем конфиг
+INSTALLED_VERSION=$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null | tr -d '[:space:]')
+REPO_PATH_ESCAPED=$(printf '%s' "$SCRIPT_DIR" | sed 's/\\/\\\\/g; s/"/\\"/g')
+
 if [ ! -f "$VAULT_PATH/.obsidian-logger.json" ]; then
   cat > "$VAULT_PATH/.obsidian-logger.json" << CONFIGEOF
 {
   "min_tool_calls": 5,
   "log_retention_days": 30,
-  "language": "${LANG_CHOICE}"
+  "language": "${LANG_CHOICE}",
+  "repo_path": "${REPO_PATH_ESCAPED}",
+  "installed_version": "${INSTALLED_VERSION}"
 }
 CONFIGEOF
+else
+  # Обновляем repo_path и installed_version в существующем конфиге
+  VAULT_PATH="$VAULT_PATH" REPO_PATH="$SCRIPT_DIR" INST_VER="$INSTALLED_VERSION" node -e "
+    const fs=require('fs');
+    const cfg=JSON.parse(fs.readFileSync(process.env.VAULT_PATH+'/.obsidian-logger.json','utf8'));
+    cfg.repo_path=process.env.REPO_PATH;
+    cfg.installed_version=process.env.INST_VER;
+    fs.writeFileSync(process.env.VAULT_PATH+'/.obsidian-logger.json',JSON.stringify(cfg,null,2));
+  " 2>/dev/null || true
 fi
 
 # CLAUDE.md для vault на выбранном языке

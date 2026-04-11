@@ -6,5 +6,7 @@
   "context_injection": true,
   "daily_notes": true,
   "canvas": false,
-  "stale_threshold_days": 5
+  "stale_threshold_days": 5,
+  "repo_path": "",
+  "installed_version": ""
 }
