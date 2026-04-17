@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-04-17
+
+### Changed (stability overhaul)
+- **Extracted all `node -e "..."` bash heredocs into standalone `hooks/lib/*.js` files.** This eliminates the entire class of bash-string-escaping bugs (where a double quote inside a JS comment would truncate the outer bash string and make node fail silently — the exact bug fixed in 2.0.4). Each `.js` is now independently testable.
+- **Unified project detection** — single `resolve-project.js` used by both Stop and SessionEnd hooks. Adds `.obsidian-project` file override (one line with project name) in CWD or any parent directory for explicit control. `project_roots` matching now uses longest-prefix match instead of first-match-wins.
+- **Atomic context writes** — `write-context.js` writes to `.tmp` and renames, preventing corruption if two Claude Code sessions end simultaneously for the same project.
+- **AUTOLOG engagement fix** — `.reminded-*` marker is no longer set preemptively on the first Stop. Now the reminder repeats on subsequent Stops (with 2-minute debounce) until Claude writes `.logged-*`. Previously the reminder fired once and vanished if Claude didn't respond in that turn.
+- **GC for abandoned sessions** — `gc-stale-markers.js` runs on first Stop, removes `.session-started-*` and `.reminded-*` older than 24 hours (SessionEnd didn't fire = Claude Code exited abruptly).
+
+### Added
+- **Visible error log** — node stderr no longer lost to `/dev/null`. All hook errors are appended to `sessions/.hook-errors.log` with timestamp + script name + error message. Rotated like other technical files.
+- **`[HOOK-ERROR]` context injection** — if recent (< 24h) hook errors exist, they're surfaced in the next Stop hook's `[CONTEXT]` block so you find out in hours, not months.
+- **`tests/test-hooks.sh`** — 22 integration tests covering full session lifecycle: malformed input survival, context JSON schema completeness, MOC generation, `.obsidian-project` override, AUTOLOG engagement, error logging, and GC. This is the test that would have caught the 2.0.4 bug.
+
+## [2.0.4] - 2026-04-17
+
+### Fixed
+- **CRITICAL**: Embedded double quotes in JS comments (`// Парсим "Где остановился"`) inside `node -e "..."` bash heredoc terminated the outer string early, causing SyntaxError on every SessionEnd. `2>/dev/null` silently swallowed the error. Result: `.context-<project>.json` files were never written/updated since v4 — no `stopped_at`, `open_todos`, `recent_sessions` persisted; MOC pages generated with empty sessions table; `[CONTEXT]` injection produced nothing. Introduced in commit `7c3e29f` (v4 "ADHD-optimized context"), survived through v2.0.0..v2.0.3.
+
 ## [2.0.3] - 2026-04-09
 
 ### Fixed

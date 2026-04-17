@@ -238,6 +238,13 @@ for script in hooks/log-session.sh hooks/log-tools.sh hooks/session-reminder.sh;
   chmod +x "$VAULT_PATH/scripts/$BASENAME"
 done
 
+# Копируем lib/*.js и lib/common.sh (используются хуками; без плейсхолдеров)
+if [ -d "$SCRIPT_DIR/hooks/lib" ]; then
+  mkdir -p "$VAULT_PATH/scripts/lib"
+  cp "$SCRIPT_DIR/hooks/lib/"*.js "$VAULT_PATH/scripts/lib/" 2>/dev/null || true
+  cp "$SCRIPT_DIR/hooks/lib/common.sh" "$VAULT_PATH/scripts/lib/" 2>/dev/null || true
+fi
+
 # Копируем шаблоны на выбранном языке
 for tmpl in daily meeting project; do
   SRC="$SCRIPT_DIR/templates/${tmpl}.${LANG_CHOICE}.md"

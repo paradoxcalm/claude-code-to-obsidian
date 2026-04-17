@@ -1,16 +1,20 @@
 #!/bin/bash
-# SessionEnd hook: сохраняет контекст проекта, обновляет daily note, создаёт project page
-# Срабатывает при завершении сессии Claude Code
+# SessionEnd hook: writes stub log, updates project context, MOC, daily note.
+# Node logic lives in lib/*.js — bash only orchestrates.
 
 VAULT_ROOT="__VAULT_PATH__"
 VAULT="${VAULT_ROOT}/sessions"
 PROJECTS="${VAULT_ROOT}/projects"
 CONFIG="${VAULT_ROOT}/.obsidian-logger.json"
+LIB="${VAULT_ROOT}/scripts/lib"
+HOOK_NAME="SessionEnd"
 
-# Guard
 case "$VAULT_ROOT" in
   __*) exit 0 ;;
 esac
+
+# shellcheck disable=SC1091
+[ -f "${LIB}/common.sh" ] && . "${LIB}/common.sh"
 
 DATE=$(date +"%Y-%m-%d")
 TIME=$(date +"%H-%M")
@@ -18,7 +22,6 @@ HHMM=$(date +"%H:%M")
 
 INPUT=$(cat)
 
-# Парсим JSON через sed — без node для скорости
 SESSION_ID_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 CWD=$(printf '%s' "$INPUT" | sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 [ -z "$SESSION_ID_RAW" ] && SESSION_ID_RAW="unknown"
@@ -27,40 +30,29 @@ CWD=$(printf '%s' "$INPUT" | sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\
 SESSION_ID=$(printf '%s' "$SESSION_ID_RAW" | LC_ALL=C tr -cd 'a-zA-Z0-9_-')
 [ -z "$SESSION_ID" ] && SESSION_ID="unknown"
 
-# ============================================================
-# Определяем проект (из маркера Stop хука или из CWD)
-# ============================================================
 SESSION_STARTED="${VAULT}/.session-started-${SESSION_ID}"
+PROJECT=""
 if [ -f "$SESSION_STARTED" ]; then
   PROJECT=$(cat "$SESSION_STARTED" 2>/dev/null)
 fi
 
 if [ -z "$PROJECT" ]; then
-  PROJECT=$(basename "$CWD" 2>/dev/null || printf 'general')
-  PROJECT=$(printf '%s' "$PROJECT" | LC_ALL=C tr -cd 'a-zA-Z0-9._-' | head -c 50)
+  PROJECT=$(CFG="$CONFIG" CWD="$CWD" PROJECTS_DIR="$PROJECTS" node "${LIB}/resolve-project.js" 2>/dev/null)
 fi
 [ -z "$PROJECT" ] && PROJECT="general"
 
-# Считаем tool calls: session_id + fallback на CWD (ловит sub-agent вызовы)
 TOOL_LOG="${VAULT}/.tool-log-${DATE}.txt"
 TOOL_COUNT=0
 if [ -f "$TOOL_LOG" ]; then
   TOOL_COUNT=$(grep -cF "| ${SESSION_ID} |" "$TOOL_LOG" 2>/dev/null || true)
   TOOL_COUNT=${TOOL_COUNT:-0}
-  # Fallback: если session_id не нашёл tool calls — ищем по CWD (sub-agent случай)
-  if [ "$TOOL_COUNT" -eq 0 ] 2>/dev/null && [ "$CWD" != "unknown" ]; then
-    TOOL_COUNT=$(awk -F'|' -v cwd="$CWD" '{gsub(/^[ \t]+|[ \t]+$/,"",$4)} $4==cwd{c++} END{print c+0}' "$TOOL_LOG" 2>/dev/null || echo 0)
+  if [ "$TOOL_COUNT" -eq 0 ] 2>/dev/null && [ -n "$CWD" ] && [ "$CWD" != "unknown" ]; then
+    TOOL_COUNT=$(awk -F'|' -v cwd="$CWD" '{gsub(/^[ \t]+|[ \t]+$/,"",$4)} $4==cwd{c++} END{print c+0}' "$TOOL_LOG" 2>/dev/null || true)
   fi
 fi
 TOOL_COUNT=${TOOL_COUNT:-0}
 
-# Читаем конфиг одним node-вызовом (5 полей через пробел)
-_cfg_line=$(CFG="$CONFIG" node -e "
-  try{const c=JSON.parse(require('fs').readFileSync(process.env.CFG,'utf8'));
-  console.log([c.language||'ru',c.log_retention_days||30,c.daily_notes!==false?'true':'false',c.min_tool_calls||5,c.canvas===true?'true':'false'].join(' '))}
-  catch{console.log('ru 30 true 5 false')}
-" 2>/dev/null || echo "ru 30 true 5 false")
-# Разбираем: "ru 30 true 5 false"
+_cfg_line=$(CFG="$CONFIG" node "${LIB}/read-config.js" 2>/dev/null || echo "ru 30 true 5 false")
 LANG_CFG=$(echo "$_cfg_line" | cut -d' ' -f1)
 LOG_RETENTION_DAYS=$(echo "$_cfg_line" | cut -d' ' -f2)
 DAILY_NOTES=$(echo "$_cfg_line" | cut -d' ' -f3)
@@ -72,37 +64,34 @@ DAILY_NOTES=${DAILY_NOTES:-true}
 MIN_TOOL_CALLS=${MIN_TOOL_CALLS:-5}
 CANVAS_ENABLED=${CANVAS_ENABLED:-false}
 
-# Compact mode: короткие сессии пропускают MOC/Canvas/daily
 COMPACT_MODE="false"
 if [ "$TOOL_COUNT" -lt "$MIN_TOOL_CALLS" ] 2>/dev/null; then
   COMPACT_MODE="true"
 fi
 
-# Если Claude уже записал подробный лог — не создаём стаб
 MARKER="${VAULT}/.logged-${SESSION_ID}"
 SKIP_STUB="false"
 if [ -f "$MARKER" ]; then
   SKIP_STUB="true"
 fi
 
-mkdir -p "$VAULT" "$PROJECTS"
+mkdir -p "$VAULT" "$PROJECTS" || true
 
-# Находим предыдущую сессию из контекст-кэша (быстро, O(1))
 PREV_SESSION=""
-if [ -f "${PROJECTS}/.context-${PROJECT}.json" ]; then
-  PREV_SESSION=$(sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${PROJECTS}/.context-${PROJECT}.json" 2>/dev/null | head -1)
+CONTEXT_FILE="${PROJECTS}/.context-${PROJECT}.json"
+if [ -f "$CONTEXT_FILE" ]; then
+  PREV_SESSION=$(sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CONTEXT_FILE" 2>/dev/null | head -1)
 fi
 
 # ============================================================
-# 1. СТАБ-ЛОГ СЕССИИ (если Claude не записал)
+# 1. Stub log (if Claude didn't write a detailed one)
 # ============================================================
-
-# Извлекаем какие инструменты использовались (для информативного стаба)
 TOOLS_USED=""
 if [ -f "$TOOL_LOG" ] && [ "$TOOL_COUNT" -gt 0 ] && [ "$CWD" != "unknown" ]; then
   TOOLS_USED=$(awk -F'|' -v cwd="$CWD" '{gsub(/^[ \t]+|[ \t]+$/,"",$4); gsub(/^[ \t]+|[ \t]+$/,"",$3)} $4==cwd{count[$3]++} END{for(k in count) print count[k], k}' "$TOOL_LOG" 2>/dev/null | sort -rn | head -8 | awk '{printf "%s x%s, ", $2, $1}' | sed 's/, $//')
 fi
 
+LOGFILE=""
 if [ "$SKIP_STUB" = "false" ]; then
   LOGFILE="${VAULT}/${DATE}_${TIME}_${PROJECT}.md"
   if [ -f "$LOGFILE" ]; then
@@ -166,19 +155,14 @@ if [ "$SKIP_STUB" = "false" ]; then
 fi
 
 # ============================================================
-# 2. СОХРАНЕНИЕ КОНТЕКСТА ПРОЕКТА
+# 2. Update project context JSON
 # ============================================================
-CONTEXT_FILE="${PROJECTS}/.context-${PROJECT}.json"
-
-# Определяем имя ссылки на сессию (нужно и для контекста, и для MOC)
 SESSION_LINK_NAME="${DATE}_${TIME}_${PROJECT}"
 
-# Находим лог-файл этой сессии (Claude мог записать, или стаб)
 SESSION_LOG=""
 if [ "$SKIP_STUB" = "true" ]; then
-  # Claude записал — ищем файл по дате и проекту
   SESSION_LOG=$(ls -t "${VAULT}/${DATE}"*"${PROJECT}"*.md 2>/dev/null | head -1)
-  SESSION_LINK_NAME=$(basename "${SESSION_LOG:-.}" .md)
+  [ -n "$SESSION_LOG" ] && SESSION_LINK_NAME=$(basename "${SESSION_LOG}" .md)
 else
   SESSION_LOG="$LOGFILE"
 fi
@@ -186,271 +170,43 @@ fi
 CTX_FILE="$CONTEXT_FILE" LOG_FILE="${SESSION_LOG:-}" \
 CTX_PROJECT="$PROJECT" CTX_DATE="$DATE" CTX_HHMM="$HHMM" \
 CTX_TOOLS="$TOOL_COUNT" CTX_SID="$SESSION_ID" CTX_CWD="$CWD" \
-CTX_LINK="$SESSION_LINK_NAME" node -e "
-  const fs=require('fs');
-  const ctxPath=process.env.CTX_FILE;
-  const logPath=process.env.LOG_FILE;
-  const PROJECT=process.env.CTX_PROJECT;
-  const DATE=process.env.CTX_DATE;
-  const HHMM=process.env.CTX_HHMM;
-  const TOOL_COUNT=process.env.CTX_TOOLS;
-  const SESSION_ID=process.env.CTX_SID;
-  const CWD=process.env.CTX_CWD;
-  const LINK=process.env.CTX_LINK;
-
-  let ctx={};
-  try { ctx=JSON.parse(fs.readFileSync(ctxPath,'utf8')); } catch{}
-
-  ctx.project=ctx.project||PROJECT;
-  ctx.first_seen=ctx.first_seen||DATE;
-  ctx.last_seen=DATE;
-  ctx.session_count=(ctx.session_count||0)+1;
-
-  let summary=TOOL_COUNT+' tool calls';
-  let todos=ctx.open_todos||[];
-  let files=[];
-  let stoppedAt='';
-
-  if(logPath){
-    try{
-      const log=fs.readFileSync(logPath,'utf8');
-      const tm=log.match(/^#\\s+(?:Сессия|Session|会话):\\s*(.+)/m);
-      if(tm && tm[1].trim()!==PROJECT) summary=tm[1].trim();
-
-      const todoSec=log.split(/^##\\s+TODO/m)[1];
-      if(todoSec){
-        const items=todoSec.split(/^##/m)[0];
-        const m=items.match(/^-\\s*\\[\\s*\\]\\s*(.+)/gm);
-        if(m) todos=m.map(x=>x.replace(/^-\\s*\\[\\s*\\]\\s*/,'').trim());
-      }
-
-      const fileSec=log.split(/^##\\s+(?:Изменённые файлы|Changed Files|变更文件)/m)[1];
-      if(fileSec){
-        const items=fileSec.split(/^##/m)[0];
-        const m=items.match(/\`([^\`]+)\`/g);
-        if(m) files=m.map(x=>x.replace(/\`/g,'')).slice(0,10);
-      }
-
-      // Парсим "Где остановился" / "Where I stopped" / "停止位置"
-      const stoppedSec=log.split(/^##\\s+(?:Где остановился|Where I stopped|停止位置)/m)[1];
-      if(stoppedSec){
-        const line=stoppedSec.split(/^##/m)[0].trim().split('\\n')[0].trim();
-        if(line && !line.startsWith('_')) stoppedAt=line;
-      }
-    }catch{}
-  }
-
-  ctx.last_session={
-    id:SESSION_ID,
-    date:DATE,
-    time:HHMM,
-    summary:summary,
-    cwd:CWD
-  };
-
-  // "Где остановился" — ключевое для СДВГ
-  if(stoppedAt) ctx.stopped_at=stoppedAt;
-  else delete ctx.stopped_at;
-
-  // TODO: max 5 (1 next action + 4 backlog)
-  if(todos.length>0) ctx.open_todos=todos.slice(0,5);
-  else delete ctx.open_todos;
-  if(files.length>0) ctx.recent_files=files;
-
-  // Автотеги по расширениям файлов
-  const extMap={
-    '.ts':'typescript','.tsx':'typescript','.js':'javascript','.jsx':'javascript',
-    '.py':'python','.rs':'rust','.go':'golang','.java':'java','.rb':'ruby',
-    '.sql':'database','.prisma':'database','.sh':'bash','.bash':'bash',
-    '.css':'css','.scss':'css','.html':'html','.vue':'vue','.svelte':'svelte',
-    '.json':'config','.yaml':'config','.yml':'config','.toml':'config',
-    '.md':'docs','.mdx':'docs','.dockerfile':'docker','.docker':'docker'
-  };
-  const tags=new Set(ctx.tech_tags||[]);
-  for(const f of files){
-    const ext='.'+f.split('.').pop().toLowerCase();
-    if(extMap[ext]) tags.add(extMap[ext]);
-  }
-  if(tags.size>0) ctx.tech_tags=[...tags].slice(0,10);
-
-  // Обновляем recent_sessions (здесь, а не в MOC, чтобы compact sessions тоже попадали)
-  const sessions=ctx.recent_sessions||[];
-  sessions.unshift({date:DATE,time:HHMM,tools:parseInt(TOOL_COUNT)||0,summary:summary,link:LINK});
-  if(sessions.length>10) sessions.length=10;
-  ctx.recent_sessions=sessions;
-
-  fs.writeFileSync(ctxPath,JSON.stringify(ctx,null,2));
-" 2>/dev/null
+CTX_LINK="$SESSION_LINK_NAME" \
+run_node "${LIB}/write-context.js" || true
 
 # ============================================================
-# 3. СТРАНИЦА ПРОЕКТА (MOC) + 3b. CANVAS + 4. DAILY NOTE
-# MOC/daily обновляются если были tool calls, canvas — только для substantial
+# 3. MOC + Canvas + Daily note (only if there were tool calls)
 # ============================================================
 if [ "$TOOL_COUNT" -eq 0 ] 2>/dev/null; then
-  # Нулевая сессия — контекст уже сохранён, остаётся только cleanup
   rm -f "${SESSION_STARTED}" "${VAULT}/.reminded-${SESSION_ID}" 2>/dev/null
   if [ "$LOG_RETENTION_DAYS" -gt 0 ] 2>/dev/null; then
     find "$VAULT" -maxdepth 1 -name '.tool-log-*' -type f -mtime +"$LOG_RETENTION_DAYS" -delete 2>/dev/null || true
     find "$VAULT" -maxdepth 1 -name '.logged-*' -type f -mtime +"$LOG_RETENTION_DAYS" -delete 2>/dev/null || true
     find "$VAULT" -maxdepth 1 -name '.reminded-*' -type f -mtime +"$LOG_RETENTION_DAYS" -delete 2>/dev/null || true
     find "$VAULT" -maxdepth 1 -name '.session-started-*' -type f -mtime +"$LOG_RETENTION_DAYS" -delete 2>/dev/null || true
+    find "$VAULT" -maxdepth 1 -name '.hook-errors.log' -type f -mtime +"$LOG_RETENTION_DAYS" -delete 2>/dev/null || true
   fi
   exit 0
 fi
 
 PROJECT_PAGE="${PROJECTS}/${PROJECT}.md"
-# SESSION_LINK_NAME уже вычислен в section 2
-
 CTX_FILE="$CONTEXT_FILE" PROJECT_PAGE="$PROJECT_PAGE" LANG="$LANG_CFG" \
 PROJECT="$PROJECT" DATE="$DATE" HHMM="$HHMM" TOOL_COUNT="$TOOL_COUNT" \
-SESSION_LINK="$SESSION_LINK_NAME" node -e "
-  const fs=require('fs');
-  const pp=process.env.PROJECT_PAGE;
-  const ctx_path=process.env.CTX_FILE;
-  const lang=process.env.LANG||'ru';
-  const project=process.env.PROJECT;
-  const date=process.env.DATE;
-  const hhmm=process.env.HHMM;
-  const tools=process.env.TOOL_COUNT;
-  const sessionLink=process.env.SESSION_LINK;
+SESSION_LINK="$SESSION_LINK_NAME" \
+run_node "${LIB}/write-moc.js" || true
 
-  let ctx={};
-  try{ctx=JSON.parse(fs.readFileSync(ctx_path,'utf8'))}catch{}
-
-  const todos=(ctx.open_todos||[]).slice(0,5);
-  const sessions=ctx.recent_sessions||[];
-  // recent_sessions уже обновлён в section 2 — не дублируем unshift
-
-  // Генерируем MOC
-  const L={
-    ru:{title:'Проект',status:'В работе',since:'Начало',sessions_h:'Последние сессии',
-        todos_h:'Открытые задачи',date_h:'Дата',tools_h:'Инструменты',tag:'проект',no_todos:'Нет открытых задач'},
-    en:{title:'Project',status:'In progress',since:'Since',sessions_h:'Recent Sessions',
-        todos_h:'Open Tasks',date_h:'Date',tools_h:'Tools',tag:'project',no_todos:'No open tasks'},
-    zh:{title:'项目',status:'进行中',since:'开始',sessions_h:'最近会话',
-        todos_h:'待办任务',date_h:'日期',tools_h:'工具',tag:'项目',no_todos:'无待办任务'}
-  };
-  const t=L[lang]||L.ru;
-
-  let md=[];
-  md.push('# '+t.title+': '+project);
-  md.push('');
-  md.push('**'+t.status+'** | **'+t.since+':** '+(ctx.first_seen||date)+' | **Sessions:** '+(ctx.session_count||1));
-  md.push('');
-
-  // Живые ссылки на сессии
-  md.push('## '+t.sessions_h);
-  md.push('');
-  md.push('| '+t.date_h+' | '+t.tools_h+' | |');
-  md.push('|------|-------|---|');
-  for(const s of sessions){
-    const summary=s.summary?(' — '+s.summary.substring(0,60)):'';
-    const link=s.link||(s.date+'_'+s.time.replace(/:/g,'-')+'_'+project);
-    md.push('| '+s.date+' '+s.time+' | '+s.tools+' | [['+link+']]'+summary+' |');
-  }
-  md.push('');
-
-  // TODO
-  md.push('## '+t.todos_h);
-  md.push('');
-  if(todos.length>0){
-    for(const todo of todos) md.push('- [ ] '+todo);
-  } else {
-    md.push('_'+t.no_todos+'_');
-  }
-  md.push('');
-  md.push('#'+t.tag+' #'+project);
-
-  fs.writeFileSync(pp, md.join('\n'));
-" 2>/dev/null
-
-# ============================================================
-# 3b. CANVAS — визуальная карта проекта (опционально, default off)
-# Пропускаем в compact mode (canvas — дорогая операция)
-# ============================================================
 if [ "$CANVAS_ENABLED" = "true" ] && [ "$COMPACT_MODE" != "true" ]; then
-CANVAS_FILE="${PROJECTS}/${PROJECT}.canvas"
-
-CTX_FILE="$CONTEXT_FILE" CANVAS_FILE="$CANVAS_FILE" PROJECT="$PROJECT" node -e "
-  const fs=require('fs');
-  const ctx_path=process.env.CTX_FILE;
-  const canvasPath=process.env.CANVAS_FILE;
-  const project=process.env.PROJECT;
-
-  let ctx={};
-  try{ctx=JSON.parse(fs.readFileSync(ctx_path,'utf8'))}catch{}
-
-  const sessions=ctx.recent_sessions||[];
-  const todos=(ctx.open_todos||[]).slice(0,5);
-
-  // Ноды
-  const nodes=[];
-  const edges=[];
-  let y=0;
-
-  // Центральная нода — проект
-  const projectId='project-'+project;
-  nodes.push({
-    id:projectId,
-    type:'text',
-    x:0, y:0, width:300, height:80,
-    text:'# '+project+'\nSessions: '+(ctx.session_count||0),
-    color:'4'
-  });
-
-  // Ноды сессий (справа)
-  for(let i=0;i<Math.min(sessions.length,7);i++){
-    const s=sessions[i];
-    const sid='session-'+i;
-    nodes.push({
-      id:sid,
-      type:'text',
-      x:400, y: i*120, width:350, height:80,
-      text:'**'+s.date+'** '+s.time+'\n'+(s.summary||s.tools+' tools'),
-      color: i===0?'3':'0'
-    });
-    edges.push({
-      id:'edge-'+i,
-      fromNode:projectId,
-      toNode:sid,
-      fromSide:'right',
-      toSide:'left'
-    });
-  }
-
-  // Ноды TODO (слева)
-  if(todos.length>0){
-    const todoId='todos';
-    let todoText='## TODO\n';
-    for(const t of todos) todoText+='- [ ] '+t+'\n';
-    nodes.push({
-      id:todoId,
-      type:'text',
-      x:-450, y:0, width:350, height:40+todos.length*30,
-      text:todoText,
-      color:'1'
-    });
-    edges.push({
-      id:'edge-todos',
-      fromNode:todoId,
-      toNode:projectId,
-      fromSide:'right',
-      toSide:'left'
-    });
-  }
-
-  const canvas={nodes,edges};
-  fs.writeFileSync(canvasPath,JSON.stringify(canvas,null,2));
-" 2>/dev/null
-fi  # CANVAS_ENABLED
+  CANVAS_FILE="${PROJECTS}/${PROJECT}.canvas"
+  CTX_FILE="$CONTEXT_FILE" CANVAS_FILE="$CANVAS_FILE" PROJECT="$PROJECT" \
+  run_node "${LIB}/write-canvas.js" || true
+fi
 
 # ============================================================
-# 4. DAILY NOTE (создаём/обновляем)
+# 4. Daily note
 # ============================================================
 if [ "$DAILY_NOTES" = "true" ]; then
   DAILY_DIR="${VAULT_ROOT}/daily"
   DAILY_FILE="${DAILY_DIR}/${DATE}.md"
-  mkdir -p "$DAILY_DIR"
+  mkdir -p "$DAILY_DIR" || true
 
   if [ ! -f "$DAILY_FILE" ]; then
     case "$LANG_CFG" in
@@ -486,16 +242,12 @@ if [ "$DAILY_NOTES" = "true" ]; then
         ;;
     esac
   else
-    # Дописываем строку в существующий daily note — после заголовка секции сессий
     if ! grep -qF "[[${PROJECT}]]" "$DAILY_FILE" 2>/dev/null; then
       DAILY_LINE=$(printf -- '- %s — [[%s]] — %s tool calls' "$HHMM" "$PROJECT" "$TOOL_COUNT")
-      # Ищем секцию "## Сессии" / "## Sessions" / "## 会话" и вставляем после неё
       if grep -qE "^## (Сессии|Sessions|会话)" "$DAILY_FILE" 2>/dev/null; then
-        # awk вместо sed — кроссплатформенно (macOS/Linux/Git Bash)
         DAILY_TMP="${DAILY_FILE}.tmp.$$"
         awk -v line="$DAILY_LINE" '/^## (Сессии|Sessions|会话)/{print; print line; next}{print}' "$DAILY_FILE" > "$DAILY_TMP" && mv "$DAILY_TMP" "$DAILY_FILE"
       else
-        # Секции нет — дописываем в конец
         printf '\n%s\n' "$DAILY_LINE" >> "$DAILY_FILE"
       fi
     fi
@@ -503,17 +255,17 @@ if [ "$DAILY_NOTES" = "true" ]; then
 fi
 
 # ============================================================
-# 5. CLEANUP
+# 5. Cleanup + rotation
 # ============================================================
 rm -f "${SESSION_STARTED}" 2>/dev/null
 rm -f "${VAULT}/.reminded-${SESSION_ID}" 2>/dev/null
 
-# Ротация старых технических файлов
 if [ "$LOG_RETENTION_DAYS" -gt 0 ] 2>/dev/null; then
   find "$VAULT" -maxdepth 1 -name '.tool-log-*' -type f -mtime +"$LOG_RETENTION_DAYS" -delete 2>/dev/null || true
   find "$VAULT" -maxdepth 1 -name '.logged-*' -type f -mtime +"$LOG_RETENTION_DAYS" -delete 2>/dev/null || true
   find "$VAULT" -maxdepth 1 -name '.reminded-*' -type f -mtime +"$LOG_RETENTION_DAYS" -delete 2>/dev/null || true
   find "$VAULT" -maxdepth 1 -name '.session-started-*' -type f -mtime +"$LOG_RETENTION_DAYS" -delete 2>/dev/null || true
+  find "$VAULT" -maxdepth 1 -name '.hook-errors.log' -type f -mtime +"$LOG_RETENTION_DAYS" -delete 2>/dev/null || true
 fi
 
 exit 0
